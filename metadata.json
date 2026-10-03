@@ -1,0 +1,6 @@
+{
+  "name": "CampusConnect - Institutional Community & Academic Portal",
+  "description": "Collegiate community platform featuring verified academic notices, student spaces, campus pulse briefing, and contextual campus AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

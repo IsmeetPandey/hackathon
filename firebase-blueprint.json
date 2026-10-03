@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User account profile and academic identity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "handle": { "type": "string" },
+        "role": { "type": "string", "enum": ["STUDENT", "FACULTY", "ADMIN", "CLUB_LEAD"] },
+        "department": { "type": "string" },
+        "rollNumber": { "type": "string" },
+        "karma": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "displayName", "role"]
+    },
+    "posts": {
+      "title": "Post",
+      "description": "Campus discussions, questions, and announcements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "community": { "type": "string" },
+        "upvotes": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "isOfficial": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "authorId", "community"]
+    },
+    "notices": {
+      "title": "Notice",
+      "description": "Official institutional circulars and directives",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "source": { "type": "string" },
+        "docCode": { "type": "string" },
+        "documentDate": { "type": "string" },
+        "category": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "source", "docCode"]
+    },
+    "comments": {
+      "title": "Comment",
+      "description": "Post replies and discussion comments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "content": { "type": "string" },
+        "upvotes": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "postId", "authorId", "content"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profiles indexed by UID"
+    },
+    "/posts/{postId}": {
+      "schema": "posts",
+      "description": "Campus posts and community discussions"
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": "comments",
+      "description": "Comments attached to posts"
+    },
+    "/notices/{noticeId}": {
+      "schema": "notices",
+      "description": "Official circulars and notices"
+    }
+  }
+}
