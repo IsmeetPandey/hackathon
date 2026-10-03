@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '@/types';
+import { DEMO_MODE } from '@/lib/mockData';
 import { useAuth } from '@/context/AuthContext';
 import {
   Lock,
@@ -48,6 +49,18 @@ export default function AcademicLoginPortal({
     const trimmed = input.trim();
     if (trimmed.includes('@')) return trimmed.toLowerCase();
     return `${trimmed.toLowerCase()}@campus.edu`;
+  };
+
+  const handleDemoQuickFill = (type: 'student' | 'faculty') => {
+    if (type === 'student') {
+      setIdentifier('21BCE1084@campus.edu');
+      setFullName('Ananya Sharma');
+      setPassword('studentPass2024');
+    } else {
+      setIdentifier('FAC-9042@campus.edu');
+      setFullName('Dr. Vikram Raman');
+      setPassword('facultyPass2024');
+    }
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -413,6 +426,33 @@ export default function AcademicLoginPortal({
               {loginMethod === 'password' ? 'Use mobile OTP instead' : 'Use email & password instead'}
             </button>
           </div>
+
+          {/* Demo Mode Quick Fill */}
+          {DEMO_MODE && (
+            <div className="pt-3 border-t border-subtle">
+              <div className="text-[11px] text-muted mb-2 font-bold">
+                Quick Fill Demo Options:
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleDemoQuickFill('student')}
+                  className="p-2 bg-surface-muted hover:bg-surface border border-subtle rounded-lg text-left transition cursor-pointer"
+                >
+                  <div className="font-bold text-primary">Student</div>
+                  <div className="text-[11px] text-muted truncate">21BCE1084@campus.edu</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoQuickFill('faculty')}
+                  className="p-2 bg-surface-muted hover:bg-surface border border-subtle rounded-lg text-left transition cursor-pointer"
+                >
+                  <div className="font-bold text-primary">Faculty</div>
+                  <div className="text-[11px] text-muted truncate">FAC-9042@campus.edu</div>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

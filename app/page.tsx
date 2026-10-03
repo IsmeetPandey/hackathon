@@ -53,10 +53,7 @@ export default function Home() {
 
   const handleLogout = async () => {
     await logout();
-    setLocalUser({
-      ...user,
-      isLoggedIn: false,
-    });
+    setLocalUser(null);
     setInternalView('login-sso');
     showToast('You have been signed out of CampusConnect.', 'info');
   };
