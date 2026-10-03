@@ -8,6 +8,7 @@ import BackgroundVideo from '@/components/layout/BackgroundVideo';
 import AppToast, { ToastInfo } from '@/components/ui/AppToast';
 import SearchResultsOverlay from '@/components/SearchResultsOverlay';
 import CampusAIChatbot from '@/components/CampusAIChatbot';
+import MessagesSidePanel from '@/components/MessagesSidePanel';
 import { ViewMode, UserProfile } from '@/types';
 
 interface AppShellProps {
@@ -36,6 +37,7 @@ export default function AppShell({
 }: AppShellProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMessagesOpen, setIsMessagesOpen] = useState(false);
 
   const handleSearchResultNavigation = (destination: string) => {
     if (destination.startsWith('notice:')) {
@@ -51,6 +53,8 @@ export default function AppShell({
       onSelectView('notices');
     } else if (destination === 'communities') {
       onSelectView('communities');
+    } else if (destination === 'messages') {
+      setIsMessagesOpen(true);
     } else {
       onSelectView('all-campus');
     }
@@ -93,6 +97,7 @@ export default function AppShell({
           onOpenCreatePost={onOpenCreatePost}
           user={user}
           onOpenNotifications={() => onOpenQuickModal('notifications')}
+          onOpenMessages={() => setIsMessagesOpen(true)}
           onOpenProfile={() => onOpenQuickModal('profile')}
           onLogout={onLogout}
         />
@@ -107,6 +112,7 @@ export default function AppShell({
             onSelectView={onSelectView}
             onOpenQuickModal={onOpenQuickModal}
             onOpenProfile={() => onOpenQuickModal('profile')}
+            onOpenMessages={() => setIsMessagesOpen(true)}
           />
         )}
 
@@ -122,7 +128,16 @@ export default function AppShell({
         </main>
       </div>
 
-      {/* 5. Mobile Bottom Navigation: Only for Main Student/Admin Experience */}
+      {/* 5. Messages Side Panel Drawer */}
+      {!isAuthView && (
+        <MessagesSidePanel
+          user={user}
+          isOpen={isMessagesOpen}
+          onClose={() => setIsMessagesOpen(false)}
+        />
+      )}
+
+      {/* 6. Mobile Bottom Navigation: Only for Main Student/Admin Experience */}
       {!isAuthView && (
         <MobileNav
           currentView={currentView}
@@ -132,7 +147,7 @@ export default function AppShell({
         />
       )}
 
-      {/* 6. Live Search Overlay: Only for Non-Auth */}
+      {/* 7. Live Search Overlay: Only for Non-Auth */}
       {!isAuthView && (
         <SearchResultsOverlay
           query={searchQuery}
@@ -146,7 +161,7 @@ export default function AppShell({
         />
       )}
 
-      {/* 7. Campus AI Assistant Utility: Hidden during Auth */}
+      {/* 8. Campus AI Assistant Utility: Hidden during Auth */}
       {!isAuthView && <CampusAIChatbot />}
     </div>
   );

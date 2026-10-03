@@ -87,18 +87,50 @@ export default function AllCampusFeed({
   }, [showFeedbackToast]);
 
   // Load posts directly from Firestore
+  const loadPostsFromDb = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      if (mode === 'saved') {
+        if (!user.id) {
+          setPosts([]);
+          return;
+        }
+        const savedPostsList = await listSavedPosts(user.id);
+        setPosts(savedPostsList);
+      } else {
+        const fetchedPosts = await listPosts({
+          sort: activeFilter,
+          currentUserId: user.id,
+          limitCount: 40,
+        });
+        if (mode === 'activity') {
+          const userActivity = fetchedPosts.filter(
+            (p) =>
+              p.author === user.username ||
+              p.author === user.handle?.replace(/^u\//, '') ||
+              p.hasUserUpvoted
+          );
+          setPosts(userActivity);
+        } else {
+          setPosts(fetchedPosts);
+        }
+      }
+    } catch (err: any) {
+      console.error('Firestore posts load error:', err);
+      setFetchError(err?.message || 'Failed to connect to Firestore database.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeFilter, mode, user.id, user.username, user.handle]);
+
   useEffect(() => {
     let ignore = false;
-    async function load() {
-      setIsLoading(true);
-      setFetchError(null);
+    const fetchPosts = async () => {
       try {
         if (mode === 'saved') {
           if (!user.id) {
-            if (!ignore) {
-              setPosts([]);
-              setIsLoading(false);
-            }
+            if (!ignore) setPosts([]);
             return;
           }
           const savedPostsList = await listSavedPosts(user.id);
@@ -109,7 +141,6 @@ export default function AllCampusFeed({
             currentUserId: user.id,
             limitCount: 40,
           });
-
           if (!ignore) {
             if (mode === 'activity') {
               const userActivity = fetchedPosts.filter(
@@ -130,13 +161,10 @@ export default function AllCampusFeed({
           setFetchError(err?.message || 'Failed to connect to Firestore database.');
         }
       } finally {
-        if (!ignore) {
-          setIsLoading(false);
-        }
+        if (!ignore) setIsLoading(false);
       }
-    }
-
-    load();
+    };
+    fetchPosts();
     return () => {
       ignore = true;
     };

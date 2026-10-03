@@ -21,6 +21,8 @@ interface AcademicLoginPortalProps {
   onOpenComplianceModal?: () => void;
 }
 
+const DEMO_MODE = true;
+
 export default function AcademicLoginPortal({
   user,
   onLoginSuccess,

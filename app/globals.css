@@ -35,6 +35,10 @@
     --radius-control: 8px;
 
     /* Typography assignments */
+    --font-ui: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-brand: "Space Grotesk", system-ui, sans-serif;
+    --font-ai: "Sora", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
     --font-sans: var(--font-ui), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 

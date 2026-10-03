@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { listCommunities, listNotices, listPosts } from '@/lib/dbService';
 import { Community, CircularNoticeItem, PostItem } from '@/types';
 import { Search, X, Users, FileText, MessageSquare, ArrowRight, CornerDownLeft } from 'lucide-react';

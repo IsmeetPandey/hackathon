@@ -12,14 +12,15 @@ import {
   HelpCircle,
   User,
   Settings,
-  ShieldCheck,
+  MessageSquare,
 } from 'lucide-react';
 
 interface SidebarProps {
   currentView: ViewMode;
   onSelectView: (view: ViewMode) => void;
-  onOpenQuickModal: (modalType: 'sis' | 'rules' | 'help' | 'profile') => void;
+  onOpenQuickModal: (modalType: 'sis' | 'rules' | 'help' | 'profile' | 'notifications') => void;
   onOpenProfile?: () => void;
+  onOpenMessages?: () => void;
 }
 
 export default function Sidebar({
@@ -27,12 +28,14 @@ export default function Sidebar({
   onSelectView,
   onOpenQuickModal,
   onOpenProfile,
+  onOpenMessages,
 }: SidebarProps) {
   const isHome = currentView === 'all-campus';
   const isNotices = currentView === 'notices';
   const isCommunities = currentView === 'communities' || currentView === 'robotics-club';
   const isSaved = currentView === 'saved';
   const isActivity = currentView === 'my-activity';
+  const isMessages = currentView === 'messages';
   const isProfile = currentView === 'profile';
   const isSettings = currentView === 'settings';
 
@@ -101,6 +104,29 @@ export default function Sidebar({
             Your Space
           </div>
           <nav className="space-y-0.5" aria-label="User Space Navigation">
+            {/* Messages */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenMessages) onOpenMessages();
+                else onSelectView('messages');
+              }}
+              aria-current={isMessages ? 'page' : undefined}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition text-left text-sm cursor-pointer ${
+                isMessages
+                  ? 'bg-brand-surface text-[#FF6848] font-semibold border border-[#FF6848]/20'
+                  : 'text-secondary hover:bg-surface-muted hover:text-primary'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <MessageSquare className={`w-4 h-4 ${isMessages ? 'text-[#FF6848]' : 'text-muted'}`} />
+                <span>Messages</span>
+              </div>
+              <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-[#FF6848] text-white">
+                3
+              </span>
+            </button>
+
             {/* Saved */}
             <button
               type="button"
