@@ -8,7 +8,8 @@ export type ViewMode =
   | 'saved'
   | 'my-activity'
   | 'profile'
-  | 'settings';
+  | 'settings'
+  | 'messages';
 
 export type UserRole = 'student' | 'faculty' | 'moderator';
 

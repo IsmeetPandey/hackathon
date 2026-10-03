@@ -6,6 +6,7 @@ import AllCampusFeed from '@/components/AllCampusFeed';
 import RoboticsClubFeed from '@/components/RoboticsClubFeed';
 import CircularIngestionDesk from '@/components/CircularIngestionDesk';
 import AcademicLoginPortal from '@/components/AcademicLoginPortal';
+import MessagesSidePanel from '@/components/MessagesSidePanel';
 import NoticesHub from '@/components/NoticesHub';
 import CommunitiesDirectory from '@/components/CommunitiesDirectory';
 import CommunityDetailView from '@/components/CommunityDetailView';
@@ -204,6 +205,12 @@ export default function Home() {
           />
         );
 
+      case 'messages':
+        return (
+          <div className="max-w-4xl mx-auto p-2 sm:p-4">
+            <MessagesSidePanel user={user} isOpen={true} onClose={() => handleSelectView('all-campus')} isEmbeddedView={true} />
+          </div>
+        );
       case 'my-activity':
         return (
           <AllCampusFeed
