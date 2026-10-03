@@ -29,6 +29,10 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Cpu,
+  BarChart2,
+  Clock,
+  MapPin,
 } from 'lucide-react';
 
 interface AllCampusFeedProps {
@@ -44,13 +48,24 @@ interface AllCampusFeedProps {
 
 function cleanCommunityTitle(raw: string): string {
   if (!raw) return 'Campus Feed';
-  if (raw.toLowerCase().includes('robotics')) return 'Robotics Club';
-  if (raw.toLowerCase().includes('coding') || raw.toLowerCase().includes('algorithm')) return 'Coding & Algorithms';
-  if (raw.toLowerCase().includes('hackathon')) return 'Hackathon Commons';
-  if (raw.toLowerCase().includes('exam')) return 'Examination Cell';
-  if (raw.toLowerCase().includes('placement')) return 'Career & Placements';
-  if (raw.toLowerCase().includes('ieee')) return 'IEEE Student Branch';
-  if (raw.toLowerCase().includes('all-campus')) return 'Campus Feed';
+  const l = raw.toLowerCase();
+  if (l.includes('robotics')) return 'Robotics Club';
+  if (l.includes('coding') || l.includes('algorithm')) return 'Coding & Algorithms';
+  if (l.includes('ai-ml') || l.includes('machine learning') || l.includes('ai &')) return 'AI & Machine Learning Society';
+  if (l.includes('aerospace') || l.includes('rocketry')) return 'Aerospace & Rocketry Club';
+  if (l.includes('formula') || l.includes('racing')) return 'Formula Student Racing';
+  if (l.includes('hackathon')) return 'Hackathon Commons';
+  if (l.includes('cyber') || l.includes('hacking')) return 'Cybersecurity & Ethical Hacking';
+  if (l.includes('design') || l.includes('creative')) return 'Design & Creative Arts Guild';
+  if (l.includes('e-cell') || l.includes('entrepreneur')) return 'E-Cell & Venture Studio';
+  if (l.includes('music') || l.includes('sound')) return 'Music & Audio Production Society';
+  if (l.includes('astronomy') || l.includes('space')) return 'Astronomy & Space Physics';
+  if (l.includes('debate') || l.includes('mun')) return 'Debate & Model UN Society';
+  if (l.includes('exam')) return 'Examination Cell';
+  if (l.includes('placement') || l.includes('career')) return 'Career & Placements';
+  if (l.includes('ieee')) return 'IEEE Student Branch';
+  if (l.includes('biotech')) return 'Biotechnology & Bio-Design';
+  if (l.includes('all-campus')) return 'Campus Feed';
   return raw.replace(/^c\//, '').replace(/_/g, ' ');
 }
 
@@ -577,33 +592,145 @@ export default function AllCampusFeed({
 
                   {/* Attachment Block if present */}
                   {post.attachment && (
-                    <div className="p-3 rounded-xl border border-subtle bg-surface-muted/80 flex items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-[#FF6848] shrink-0" />
-                        <div className="min-w-0">
-                          <div className="font-semibold text-primary truncate">
-                            {post.attachment.fileName || 'Attached Document'}
+                    <div className="rounded-xl border border-subtle bg-surface-muted/80 overflow-hidden text-xs">
+                      {/* Telemetry Stats for Hardware Posts */}
+                      {post.attachment.type === 'hardware' && post.attachment.telemetryStats && (
+                        <div className="p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between text-muted">
+                            <div className="flex items-center gap-2">
+                              <Cpu className="w-4 h-4 text-[#FF6848]" />
+                              <span className="font-bold text-primary text-xs">
+                                {post.attachment.metaText || 'Hardware Bench Telemetry'}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-bold">
+                              LIVE LOG
+                            </span>
                           </div>
-                          <div className="text-[11px] text-muted truncate">
-                            {post.attachment.metaText || post.attachment.fileSize || 'Verified Document'}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {post.attachment.telemetryStats.map((stat, idx) => (
+                              <div key={idx} className="p-2 rounded-lg bg-surface border border-subtle space-y-0.5">
+                                <div className="text-[10px] text-muted truncate font-medium">{stat.label}</div>
+                                <div className="text-xs font-mono font-bold text-primary truncate">{stat.val}</div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      </div>
+                      )}
 
-                      {post.attachment.fileName && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (post.attachment?.imageUrl) {
-                              window.open(post.attachment.imageUrl, '_blank');
-                            } else {
-                              onOpenPdfModal(post.attachment!.fileName || 'document.pdf');
-                            }
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-surface hover:bg-brand-surface text-[#FF6848] border border-subtle font-bold text-xs shrink-0 transition cursor-pointer"
-                        >
-                          View Document
-                        </button>
+                      {/* Workshop & Masterclass Registration Card */}
+                      {post.attachment.type === 'workshop' && post.attachment.workshopDate && (
+                        <div className="p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex flex-col items-center justify-center text-center shrink-0">
+                              <span className="text-[10px] font-bold text-indigo-500 leading-none">
+                                {post.attachment.workshopDate.month}
+                              </span>
+                              <span className="text-base font-extrabold text-primary leading-none mt-0.5">
+                                {post.attachment.workshopDate.day}
+                              </span>
+                            </div>
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="font-bold text-primary truncate text-xs sm:text-sm">
+                                {post.attachment.metaText || post.title}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-muted flex-wrap">
+                                {post.attachment.workshopTime && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-[#FF6848]" />
+                                    <span>{post.attachment.workshopTime}</span>
+                                  </span>
+                                )}
+                                {post.attachment.workshopLocation && (
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="w-3 h-3 text-muted" />
+                                    <span className="truncate">{post.attachment.workshopLocation}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onOpenRsvpModal) onOpenRsvpModal(post.title);
+                              else notify('RSVP seat reserved for ' + post.title, 'success');
+                            }}
+                            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[#FF6848] text-white hover:bg-[#E95739] font-bold text-xs shrink-0 transition cursor-pointer text-center shadow-xs"
+                          >
+                            RSVP Seat {post.attachment.workshopSeats ? `(${post.attachment.workshopSeats.total - post.attachment.workshopSeats.filled} left)` : ''}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Community Poll Card */}
+                      {post.attachment.type === 'poll' && post.attachment.pollOptions && (
+                        <div className="p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between text-muted pb-1">
+                            <div className="flex items-center gap-1.5">
+                              <BarChart2 className="w-4 h-4 text-[#FF6848]" />
+                              <span className="font-bold text-primary text-xs">Community Poll</span>
+                            </div>
+                            <span className="text-[11px] text-muted font-medium">
+                              {post.attachment.metaText || 'Active vote'}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {post.attachment.pollOptions.map((opt) => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => notify('Vote recorded for: ' + opt.text, 'success')}
+                                className="w-full text-left p-2.5 rounded-lg bg-surface hover:bg-surface-elevated border border-subtle transition relative overflow-hidden group cursor-pointer"
+                              >
+                                <div
+                                  className="absolute left-0 top-0 bottom-0 bg-[#FF6848]/10 rounded-lg transition-all"
+                                  style={{ width: `${opt.percentage}%` }}
+                                />
+                                <div className="relative flex items-center justify-between text-xs">
+                                  <span className="font-medium text-primary group-hover:text-[#FF6848] transition">
+                                    {opt.text}
+                                  </span>
+                                  <span className="font-mono font-bold text-muted text-[11px]">
+                                    {opt.percentage}% ({opt.votes})
+                                  </span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Document Attachment (PDF / Archive) */}
+                      {post.attachment.type !== 'hardware' && post.attachment.type !== 'workshop' && post.attachment.type !== 'poll' && (
+                        <div className="p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-[#FF6848] shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-semibold text-primary truncate">
+                                {post.attachment.fileName || 'Attached Document'}
+                              </div>
+                              <div className="text-[11px] text-muted truncate">
+                                {post.attachment.metaText || post.attachment.fileSize || 'Verified Document'}
+                              </div>
+                            </div>
+                          </div>
+                          {post.attachment.fileName && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (post.attachment?.imageUrl) {
+                                  window.open(post.attachment.imageUrl, '_blank');
+                                } else {
+                                  onOpenPdfModal(post.attachment!.fileName || 'document.pdf');
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-surface hover:bg-brand-surface text-[#FF6848] border border-subtle font-bold text-xs shrink-0 transition cursor-pointer"
+                            >
+                              View Document
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
