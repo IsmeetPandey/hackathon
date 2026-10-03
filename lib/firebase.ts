@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '@/firebase-applet-config.json';
 
 // Initialize Firebase App instance (singleton pattern)
@@ -14,4 +15,8 @@ export const db = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
 
+// Export Firebase Storage instance for real attachments
+export const storage = getStorage(app);
+
 export default app;
+

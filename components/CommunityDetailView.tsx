@@ -1,8 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
-import { UserProfile, ViewMode } from '@/types';
-import { ALL_CAMPUS_POSTS, DEMO_COMMUNITIES } from '@/lib/mockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { UserProfile, PostItem, Community } from '@/types';
+import {
+  getCommunityBySlug,
+  listPosts,
+  joinCommunity,
+  leaveCommunity,
+  checkCommunityMembership,
+  votePost,
+} from '@/lib/dbService';
 import {
   Users,
   ArrowLeft,
@@ -13,6 +20,8 @@ import {
   ArrowDown,
   MessageSquare,
   FileText,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface CommunityDetailViewProps {
@@ -25,35 +34,129 @@ interface CommunityDetailViewProps {
 
 export default function CommunityDetailView({
   communitySlug,
+  user,
   onOpenCreatePost,
   onOpenPdfModal,
   onBack,
 }: CommunityDetailViewProps) {
+  const [community, setCommunity] = useState<Community | null>(null);
+  const [posts, setPosts] = useState<PostItem[]>([]);
   const [isJoined, setIsJoined] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
-  // Match community from DEMO_COMMUNITIES or generate clean data
-  const community = DEMO_COMMUNITIES.find(
-    (c) =>
-      c.slug.toLowerCase().includes(communitySlug.toLowerCase()) ||
-      c.name.toLowerCase().includes(communitySlug.toLowerCase()) ||
-      communitySlug.toLowerCase().includes(c.name.toLowerCase())
-  ) || {
-    id: 'comm-custom',
-    name: communitySlug,
-    title: communitySlug.replace(/[-_]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-    description: 'Active collegiate community space for discussions, collaboration, and resource sharing.',
-    memberCount: 890,
-    category: 'commons',
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      setIsLoading(true);
+      setNotFound(false);
+      try {
+        const comm = await getCommunityBySlug(communitySlug);
+        if (ignore) return;
+        if (!comm) {
+          setNotFound(true);
+          setIsLoading(false);
+          return;
+        }
+        setCommunity(comm);
+
+        if (user.id) {
+          const joined = await checkCommunityMembership(comm.id, user.id);
+          if (!ignore) setIsJoined(joined);
+        }
+
+        const commPosts = await listPosts({
+          communitySlug: comm.slug,
+          currentUserId: user.id,
+          limitCount: 25,
+        });
+        if (!ignore) setPosts(commPosts);
+      } catch (err) {
+        console.error('Error loading community from Firestore:', err);
+      } finally {
+        if (!ignore) setIsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [communitySlug, user.id]);
+
+  const handleToggleJoin = async () => {
+    if (!community) return;
+    if (!user.id) {
+      alert('Please sign in to join spaces.');
+      return;
+    }
+
+    const nextState = !isJoined;
+    setIsJoined(nextState);
+
+    try {
+      if (nextState) {
+        await joinCommunity(community.id, user.id, user.handle);
+        setCommunity((prev) => (prev ? { ...prev, memberCount: prev.memberCount + 1 } : null));
+      } else {
+        await leaveCommunity(community.id, user.id);
+        setCommunity((prev) => (prev ? { ...prev, memberCount: Math.max(0, prev.memberCount - 1) } : null));
+      }
+    } catch (err) {
+      console.error('Error toggling community membership:', err);
+      setIsJoined(!nextState);
+    }
   };
 
-  // Filter posts that relate to this community or provide sample discussion
-  const communityPosts = ALL_CAMPUS_POSTS.filter(
-    (p) =>
-      p.community.toLowerCase().includes(communitySlug.toLowerCase()) ||
-      community.name.toLowerCase().includes(p.community.toLowerCase())
-  );
+  const handleVote = async (postId: string, type: 'up' | 'down') => {
+    if (!user.id) return;
+    try {
+      const result = await votePost(postId, user.id, type);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                upvotes: result.newUpvotes,
+                hasUserUpvoted: result.userVote === 'up',
+                hasUserDownvoted: result.userVote === 'down',
+              }
+            : p
+        )
+      );
+    } catch (err) {
+      console.error('Vote error:', err);
+    }
+  };
 
-  const displayPosts = communityPosts.length > 0 ? communityPosts : ALL_CAMPUS_POSTS.slice(0, 2);
+  if (isLoading) {
+    return (
+      <div className="max-w-[1040px] mx-auto px-3 sm:px-6 py-12 text-center text-xs text-muted flex items-center justify-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-[#FF6848]" />
+        <span>Loading space details from Firestore...</span>
+      </div>
+    );
+  }
+
+  if (notFound || !community) {
+    return (
+      <div className="max-w-[1040px] mx-auto px-3 sm:px-6 py-12 text-center space-y-4">
+        <div className="surface-elevated rounded-2xl p-8 max-w-md mx-auto space-y-3 border border-subtle">
+          <AlertCircle className="w-10 h-10 text-muted mx-auto" />
+          <h2 className="text-lg font-bold text-primary">Community Not Found</h2>
+          <p className="text-xs text-muted font-medium">
+            The space &quot;{communitySlug}&quot; could not be located in the Firestore database.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="btn-primary px-4 py-2 text-xs font-bold cursor-pointer"
+          >
+            Back to Communities Directory
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1040px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4">
@@ -68,16 +171,16 @@ export default function CommunityDetailView({
       </button>
 
       {/* Community Header Banner */}
-      <div className="surface-elevated rounded-2xl p-4 sm:p-5">
+      <div className="surface-elevated rounded-2xl p-4 sm:p-5 border border-subtle">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="w-14 h-14 rounded-2xl bg-brand-surface border border-brand-border flex items-center justify-center text-[#FF6848] font-bold text-xl shrink-0 font-brand">
-              {community.title.charAt(0)}
+              {community.name.charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-brand text-xl sm:text-2xl font-bold text-primary tracking-tight">
-                  {community.title.split('(')[0].trim()}
+                  {community.name}
                 </h1>
                 <span className="text-xs font-bold px-2 py-0.5 bg-brand-surface text-[#FF6848] rounded-md border border-brand-border capitalize">
                   {community.category || 'Community'}
@@ -87,9 +190,11 @@ export default function CommunityDetailView({
                 {community.description}
               </p>
               <div className="flex items-center gap-2 text-xs text-muted mt-1.5 font-semibold">
-                <span><strong className="text-primary">{community.memberCount.toLocaleString()}</strong> members</span>
+                <span>
+                  <strong className="text-primary">{community.memberCount.toLocaleString()}</strong> members
+                </span>
                 <span>·</span>
-                <span>Collegiate Space</span>
+                <span>c/{community.slug}</span>
               </div>
             </div>
           </div>
@@ -97,108 +202,139 @@ export default function CommunityDetailView({
           <div className="flex items-center gap-2 self-start sm:self-center shrink-0 w-full sm:w-auto">
             <button
               type="button"
-              onClick={() => setIsJoined(!isJoined)}
-              className="btn-secondary flex-1 sm:flex-none min-h-[40px] px-4 text-xs font-bold"
+              onClick={handleToggleJoin}
+              className={`min-h-[40px] px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 flex-1 sm:flex-none cursor-pointer ${
+                isJoined
+                  ? 'btn-secondary text-xs py-2 px-4'
+                  : 'btn-primary text-xs py-2 px-4'
+              }`}
             >
               {isJoined ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-500" />
+                  <Check className="w-3.5 h-3.5" />
                   <span>Joined</span>
                 </>
               ) : (
-                <span>Join Space</span>
+                <>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Join Space</span>
+                </>
               )}
             </button>
 
             <button
               type="button"
               onClick={onOpenCreatePost}
-              className="btn-primary flex-1 sm:flex-none min-h-[40px] px-4 text-xs font-bold shadow-2xs"
+              className="btn-primary min-h-[40px] px-4 rounded-xl text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5 flex-1 sm:flex-none cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Create Post</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Post to Space</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Community Feed */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between pb-1">
-          <h2 className="font-brand text-base font-bold text-primary">Community Discussions</h2>
-          <span className="text-xs font-semibold text-muted">{displayPosts.length} discussions</span>
+      {/* Community Posts */}
+      <div className="space-y-3.5">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm text-primary uppercase tracking-wider font-brand">
+            Discussions &amp; Updates ({posts.length})
+          </h2>
         </div>
 
-        {displayPosts.map((post) => (
-          <article
-            key={post.id}
-            className="surface-elevated rounded-2xl p-4 sm:p-5 transition space-y-3"
-          >
-            <div className="flex items-center gap-2 text-xs text-muted font-medium">
-              <span className="font-bold text-primary">{post.author.replace(/^u\//, '')}</span>
-              <span>·</span>
-              <span>{post.timestamp}</span>
+        {posts.length === 0 ? (
+          <div className="surface-elevated rounded-2xl p-8 text-center space-y-3 border border-subtle">
+            <div className="w-10 h-10 rounded-xl bg-surface-muted flex items-center justify-center mx-auto text-muted">
+              <MessageSquare className="w-5 h-5" />
             </div>
-
-            <h3 className="font-brand text-base sm:text-lg font-bold text-primary leading-snug">
-              {post.title}
-            </h3>
-
-            <p className="text-xs sm:text-sm text-secondary leading-relaxed whitespace-pre-line font-medium">
-              {post.content}
+            <h3 className="text-sm font-bold text-primary">No discussions in this space yet</h3>
+            <p className="text-xs text-muted max-w-sm mx-auto font-medium">
+              Be the first to publish a project update, question, or resource to {community.name}!
             </p>
-
-            {post.attachment && (
-              <div className="p-3 bg-surface-muted border border-subtle rounded-xl flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="w-4 h-4 text-[#FF6848] shrink-0" />
-                  <span className="font-bold text-primary truncate">
-                    {post.attachment.fileName || 'Attached Reference Document'}
-                  </span>
+            <button
+              type="button"
+              onClick={onOpenCreatePost}
+              className="btn-primary px-4 py-2 text-xs font-bold cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create First Post</span>
+            </button>
+          </div>
+        ) : (
+          posts.map((post) => (
+            <article
+              key={post.id}
+              className="surface-elevated rounded-2xl p-4 sm:p-5 space-y-3 border border-subtle"
+            >
+              <div className="flex items-center justify-between text-xs text-muted">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-primary">{post.author}</span>
+                  <span>·</span>
+                  <span>{post.timestamp}</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenPdfModal(post.attachment?.fileName || 'circular_endsem_schedule_latest.pdf')}
-                  className="px-3 py-1 bg-surface border border-subtle hover:border-[#FF6848] text-xs font-bold text-primary rounded-lg transition shrink-0 cursor-pointer"
-                >
-                  View
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center gap-3 pt-2.5 border-t border-subtle text-xs font-semibold text-secondary">
-              <div className="flex items-center bg-surface-muted rounded-lg p-0.5 border border-subtle">
-                <button type="button" className="p-1.5 rounded-md hover:text-[#FF6848] cursor-pointer">
-                  <ArrowUp className="w-4 h-4" />
-                </button>
-                <span className="px-2 text-xs font-bold text-primary">{post.upvotes}</span>
-                <button type="button" className="p-1.5 rounded-md hover:text-blue-500 cursor-pointer">
-                  <ArrowDown className="w-4 h-4" />
-                </button>
+                {post.pinned && (
+                  <span className="text-[10px] font-bold text-[#FF6848] bg-brand-surface px-1.5 py-0.5 rounded border border-brand-border">
+                    PINNED
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-surface-muted border border-transparent hover:border-subtle cursor-pointer">
-                <MessageSquare className="w-4 h-4" />
-                <span>{post.commentsCount} Comments</span>
-              </div>
+              <h3 className="text-base font-bold text-primary tracking-tight">{post.title}</h3>
+              {post.content && (
+                <p className="text-xs sm:text-sm text-secondary leading-relaxed font-medium">
+                  {post.content}
+                </p>
+              )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('open-campus-ai', {
-                      detail: { prompt: `Summarize this community discussion: "${post.title}"` },
-                    })
-                  );
-                }}
-                className="flex items-center gap-1 text-[#FF6848] hover:bg-brand-surface px-2.5 py-1.5 rounded-lg transition cursor-pointer font-ai font-bold"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Ask AI</span>
-              </button>
-            </div>
-          </article>
-        ))}
+              {post.attachment && (
+                <div className="p-3 rounded-xl border border-subtle bg-surface-muted/80 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="w-4 h-4 text-[#FF6848] shrink-0" />
+                    <span className="font-bold text-primary truncate">
+                      {post.attachment.fileName || 'Attached Document'}
+                    </span>
+                  </div>
+                  {post.attachment.fileName && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPdfModal(post.attachment!.fileName || 'document.pdf')}
+                      className="px-2.5 py-1 text-xs font-bold text-[#FF6848] bg-surface rounded-lg border border-subtle hover:bg-brand-surface transition cursor-pointer"
+                    >
+                      View
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2 border-t border-subtle text-xs">
+                <div className="flex items-center bg-surface-muted border border-subtle rounded-xl p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleVote(post.id, 'up')}
+                    className={`p-1.5 rounded-lg transition cursor-pointer ${
+                      post.hasUserUpvoted ? 'text-[#FF6848] bg-brand-surface font-bold' : 'text-muted hover:text-primary'
+                    }`}
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="px-1.5 font-bold text-primary">{post.upvotes}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleVote(post.id, 'down')}
+                    className="p-1.5 rounded-lg text-muted hover:text-primary transition cursor-pointer"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 text-muted font-medium">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>{post.commentsCount} replies</span>
+                </div>
+              </div>
+            </article>
+          ))
+        )}
       </div>
     </div>
   );

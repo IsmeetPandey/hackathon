@@ -10,10 +10,22 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { UserProfile } from '@/types';
-import { INITIAL_USER } from '@/lib/mockData';
+
+export const GUEST_USER: UserProfile = {
+  id: '',
+  username: 'Guest Student',
+  handle: 'u/guest',
+  email: '',
+  avatarUrl: '',
+  karma: '0',
+  role: 'Student',
+  department: '',
+  rollNumber: '',
+  isLoggedIn: false,
+};
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -30,10 +42,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_USER);
+  const [userProfile, setUserProfile] = useState<UserProfile>(GUEST_USER);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Sync auth state listener
+  // Sync auth state listener with Firestore profile
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setCurrentUser(firebaseUser);
@@ -46,29 +58,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = userDoc.data();
             setUserProfile({
               id: firebaseUser.uid,
-              username: data.displayName || firebaseUser.displayName || 'Campus Student',
-              handle: data.handle || `u/${(data.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
-              email: firebaseUser.email || '',
-              avatarUrl: firebaseUser.photoURL || '',
-              karma: String(data.karma || 420),
+              username: data.displayName || firebaseUser.displayName || 'Campus Member',
+              handle: data.handle || `u/${(data.displayName || firebaseUser.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
+              email: firebaseUser.email || data.email || '',
+              avatarUrl: data.avatarUrl || firebaseUser.photoURL || '',
+              karma: String(data.karma ?? 100),
               role: data.role || 'Student',
-              department: data.department || 'Computer Science & Engineering',
-              rollNumber: data.rollNumber || '21BCE1084',
+              department: data.department || 'General Academic',
+              rollNumber: data.rollNumber || '',
               isLoggedIn: true,
-              createdAt: data.createdAt || new Date().toISOString(),
+              createdAt: data.createdAt ? (typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate().toISOString() : data.createdAt) : new Date().toISOString(),
             });
           } else {
-            // Document doesn't exist yet, create initial profile in Firestore
+            // Create genuine user profile in Firestore
             const initialDoc = {
               id: firebaseUser.uid,
               email: firebaseUser.email || '',
               displayName: firebaseUser.displayName || 'Campus Member',
               handle: `u/${(firebaseUser.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
               role: 'Student',
-              department: 'Computer Science & Engineering',
-              rollNumber: '21BCE1084',
-              karma: 420,
-              createdAt: new Date().toISOString(),
+              department: 'General Academic',
+              rollNumber: '',
+              karma: 100,
+              avatarUrl: firebaseUser.photoURL || '',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
             };
             await setDoc(userDocRef, initialDoc);
 
@@ -77,31 +91,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               username: initialDoc.displayName,
               handle: initialDoc.handle,
               email: initialDoc.email,
-              avatarUrl: firebaseUser.photoURL || '',
+              avatarUrl: initialDoc.avatarUrl,
               karma: String(initialDoc.karma),
               role: initialDoc.role,
               department: initialDoc.department,
               rollNumber: initialDoc.rollNumber,
               isLoggedIn: true,
-              createdAt: initialDoc.createdAt,
+              createdAt: new Date().toISOString(),
             });
           }
         } catch (err) {
-          console.warn('Firestore profile fetch fallback:', err);
-          setUserProfile((prev) => ({
-            ...prev,
+          console.error('Firestore profile sync error:', err);
+          setUserProfile({
             id: firebaseUser.uid,
-            username: firebaseUser.displayName || prev.username,
-            email: firebaseUser.email || prev.email,
+            username: firebaseUser.displayName || 'Campus Student',
+            handle: `u/${(firebaseUser.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
+            email: firebaseUser.email || '',
+            avatarUrl: firebaseUser.photoURL || '',
+            karma: '100',
+            role: 'Student',
+            department: 'General Academic',
+            rollNumber: '',
             isLoggedIn: true,
-          }));
+            createdAt: new Date().toISOString(),
+          });
         }
       } else {
-        // Not logged in or logged out
-        setUserProfile((prev) => ({
-          ...prev,
-          isLoggedIn: false,
-        }));
+        setUserProfile(GUEST_USER);
       }
       setIsLoading(false);
     });
@@ -122,20 +138,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: data.displayName || 'Campus Student',
         handle: data.handle || `u/${(data.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
         email: cred.user.email || '',
-        avatarUrl: cred.user.photoURL || '',
-        karma: String(data.karma || 420),
+        avatarUrl: data.avatarUrl || cred.user.photoURL || '',
+        karma: String(data.karma ?? 100),
         role: data.role || 'Student',
-        department: data.department || 'Computer Science & Engineering',
-        rollNumber: data.rollNumber || '21BCE1084',
+        department: data.department || 'General Academic',
+        rollNumber: data.rollNumber || '',
         isLoggedIn: true,
       };
     } else {
       profile = {
-        ...INITIAL_USER,
         id: cred.user.uid,
+        username: cred.user.displayName || 'Campus Student',
+        handle: `u/${(cred.user.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
         email: cred.user.email || '',
+        avatarUrl: cred.user.photoURL || '',
+        karma: '100',
+        role: 'Student',
+        department: 'General Academic',
+        rollNumber: '',
         isLoggedIn: true,
       };
+      await setDoc(userDocRef, {
+        id: cred.user.uid,
+        displayName: profile.username,
+        handle: profile.handle,
+        email: profile.email,
+        role: profile.role,
+        department: profile.department,
+        rollNumber: '',
+        karma: 100,
+        createdAt: serverTimestamp(),
+      });
     }
     setUserProfile(profile);
     return profile;
@@ -146,34 +179,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     pass: string,
     name: string,
     role: string = 'Student',
-    dept: string = 'Computer Science & Engineering'
+    dept: string = 'General Academic'
   ): Promise<UserProfile> => {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const handle = `u/${name.toLowerCase().replace(/\s+/g, '_')}`;
     const newDoc = {
       id: cred.user.uid,
       email,
       displayName: name,
-      handle: `u/${name.toLowerCase().replace(/\s+/g, '_')}`,
+      handle,
       role,
       department: dept,
-      rollNumber: '21BCE1084',
+      rollNumber: '',
       karma: 100,
-      createdAt: new Date().toISOString(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
     await setDoc(doc(db, 'users', cred.user.uid), newDoc);
 
     const profile: UserProfile = {
       id: cred.user.uid,
       username: name,
-      handle: newDoc.handle,
+      handle,
       email,
       avatarUrl: '',
       karma: '100',
       role,
       department: dept,
-      rollNumber: '21BCE1084',
+      rollNumber: '',
       isLoggedIn: true,
-      createdAt: newDoc.createdAt,
+      createdAt: new Date().toISOString(),
     };
     setUserProfile(profile);
     return profile;
@@ -193,11 +228,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: data.displayName || cred.user.displayName || 'Campus Member',
         handle: data.handle || `u/${(cred.user.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
         email: cred.user.email || '',
-        avatarUrl: cred.user.photoURL || '',
-        karma: String(data.karma || 420),
+        avatarUrl: data.avatarUrl || cred.user.photoURL || '',
+        karma: String(data.karma ?? 100),
         role: data.role || 'Student',
-        department: data.department || 'Computer Science & Engineering',
-        rollNumber: data.rollNumber || '21BCE1084',
+        department: data.department || 'General Academic',
+        rollNumber: data.rollNumber || '',
         isLoggedIn: true,
       };
     } else {
@@ -207,10 +242,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         displayName: cred.user.displayName || 'Campus Member',
         handle: `u/${(cred.user.displayName || 'student').toLowerCase().replace(/\s+/g, '_')}`,
         role: 'Student',
-        department: 'Computer Science & Engineering',
-        rollNumber: '21BCE1084',
-        karma: 350,
-        createdAt: new Date().toISOString(),
+        department: 'General Academic',
+        rollNumber: '',
+        karma: 100,
+        avatarUrl: cred.user.photoURL || '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       await setDoc(userDocRef, newDoc);
 
@@ -220,12 +257,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         handle: newDoc.handle,
         email: newDoc.email,
         avatarUrl: cred.user.photoURL || '',
-        karma: '350',
+        karma: '100',
         role: newDoc.role,
         department: newDoc.department,
-        rollNumber: newDoc.rollNumber,
+        rollNumber: '',
         isLoggedIn: true,
-        createdAt: newDoc.createdAt,
+        createdAt: new Date().toISOString(),
       };
     }
     setUserProfile(profile);
@@ -234,15 +271,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await signOut(auth);
-    setUserProfile((prev) => ({
-      ...prev,
-      isLoggedIn: false,
-    }));
+    setUserProfile(GUEST_USER);
   };
 
   const updateProfileData = async (updated: Partial<UserProfile>) => {
     if (currentUser) {
-      await setDoc(doc(db, 'users', currentUser.uid), updated, { merge: true });
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        ...updated,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     }
     setUserProfile((prev) => ({ ...prev, ...updated }));
   };

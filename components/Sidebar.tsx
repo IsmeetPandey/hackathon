@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { ViewMode } from '@/types';
-import { DEMO_MODE } from '@/lib/mockData';
 import {
   Home,
   FileText,

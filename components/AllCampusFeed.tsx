@@ -2,7 +2,18 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { PostItem, UserProfile, CommentItem, ViewMode } from '@/types';
-import { ALL_CAMPUS_POSTS } from '@/lib/mockData';
+import {
+  listPosts,
+  votePost,
+  toggleSavePost,
+  listComments,
+  addComment,
+  listSavedPosts,
+  listCommunities,
+  joinCommunity,
+  leaveCommunity,
+  checkCommunityMembership,
+} from '@/lib/dbService';
 import CampusPulse from '@/components/CampusPulse';
 import {
   ArrowUp,
@@ -16,10 +27,8 @@ import {
   Plus,
   Send,
   Loader2,
-  Clock,
-  ArrowRight,
-  ShieldCheck,
-  Flame,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AllCampusFeedProps {
@@ -34,14 +43,15 @@ interface AllCampusFeedProps {
 }
 
 function cleanCommunityTitle(raw: string): string {
+  if (!raw) return 'Campus Feed';
   if (raw.toLowerCase().includes('robotics')) return 'Robotics Club';
   if (raw.toLowerCase().includes('coding') || raw.toLowerCase().includes('algorithm')) return 'Coding & Algorithms';
   if (raw.toLowerCase().includes('hackathon')) return 'Hackathon Commons';
   if (raw.toLowerCase().includes('exam')) return 'Examination Cell';
   if (raw.toLowerCase().includes('placement')) return 'Career & Placements';
   if (raw.toLowerCase().includes('ieee')) return 'IEEE Student Branch';
-  if (raw.toLowerCase().includes('all-campus')) return 'Campus Discussion';
-  return raw.replace('c/', '').replace('_', ' ');
+  if (raw.toLowerCase().includes('all-campus')) return 'Campus Feed';
+  return raw.replace(/^c\//, '').replace(/_/g, ' ');
 }
 
 export default function AllCampusFeed({
@@ -54,7 +64,9 @@ export default function AllCampusFeed({
   mode = 'all',
   showFeedbackToast,
 }: AllCampusFeedProps) {
-  const [posts, setPosts] = useState<PostItem[]>(ALL_CAMPUS_POSTS);
+  const [posts, setPosts] = useState<PostItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'hot' | 'new' | 'top'>('hot');
 
   // Comments state
@@ -65,10 +77,8 @@ export default function AllCampusFeed({
   const [isSubmittingComment, setIsSubmittingComment] = useState<boolean>(false);
 
   // Joined communities state
-  const [joinedCommunities, setJoinedCommunities] = useState<Record<string, boolean>>({
-    'Coding & Algorithms': true,
-    'Robotics Club': true,
-  });
+  const [joinedCommunities, setJoinedCommunities] = useState<Record<string, boolean>>({});
+  const [sidebarCommunities, setSidebarCommunities] = useState<any[]>([]);
 
   const notify = useCallback((msg: string, type: 'success' | 'info' = 'success') => {
     if (showFeedbackToast) {
@@ -76,32 +86,97 @@ export default function AllCampusFeed({
     }
   }, [showFeedbackToast]);
 
-  // Fetch posts from backend API
+  // Load posts directly from Firestore
   useEffect(() => {
     let ignore = false;
-    async function loadPosts() {
+    async function load() {
+      setIsLoading(true);
+      setFetchError(null);
       try {
-        const res = await fetch(
-          `/api/posts?sort=${activeFilter}&userHandle=${encodeURIComponent(user.handle || 'u/ananya_s')}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (!ignore && Array.isArray(data.posts) && data.posts.length > 0) {
-            setPosts(data.posts);
+        if (mode === 'saved') {
+          if (!user.id) {
+            if (!ignore) {
+              setPosts([]);
+              setIsLoading(false);
+            }
+            return;
+          }
+          const savedPostsList = await listSavedPosts(user.id);
+          if (!ignore) setPosts(savedPostsList);
+        } else {
+          const fetchedPosts = await listPosts({
+            sort: activeFilter,
+            currentUserId: user.id,
+            limitCount: 40,
+          });
+
+          if (!ignore) {
+            if (mode === 'activity') {
+              const userActivity = fetchedPosts.filter(
+                (p) =>
+                  p.author === user.username ||
+                  p.author === user.handle?.replace(/^u\//, '') ||
+                  p.hasUserUpvoted
+              );
+              setPosts(userActivity);
+            } else {
+              setPosts(fetchedPosts);
+            }
           }
         }
-      } catch (err) {
-        console.warn('API posts fetch failed, keeping fallback:', err);
+      } catch (err: any) {
+        if (!ignore) {
+          console.error('Firestore posts load error:', err);
+          setFetchError(err?.message || 'Failed to connect to Firestore database.');
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
       }
     }
-    loadPosts();
+
+    load();
     return () => {
       ignore = true;
     };
-  }, [activeFilter, user.handle]);
+  }, [activeFilter, mode, user.id, user.username, user.handle]);
 
-  // Handle voting
+  // Load sidebar communities and user memberships
+  useEffect(() => {
+    let ignore = false;
+    async function loadComms() {
+      try {
+        const list = await listCommunities();
+        if (!ignore) {
+          setSidebarCommunities(list.slice(0, 4));
+          if (user.id) {
+            const memberStatus: Record<string, boolean> = {};
+            for (const c of list.slice(0, 4)) {
+              const isMem = await checkCommunityMembership(c.id, user.id);
+              memberStatus[c.name] = isMem;
+            }
+            setJoinedCommunities(memberStatus);
+          }
+        }
+      } catch (err) {
+        console.warn('Error loading communities for sidebar:', err);
+      }
+    }
+    loadComms();
+    return () => {
+      ignore = true;
+    };
+  }, [user.id]);
+
+  // Handle voting via Firestore
   const handleVote = async (id: string, type: 'up' | 'down') => {
+    if (!user.id) {
+      notify('Please sign in to upvote posts', 'info');
+      return;
+    }
+
+    // Optimistic UI update
     setPosts((prev) =>
       prev.map((post) => {
         if (post.id !== id) return post;
@@ -139,21 +214,32 @@ export default function AllCampusFeed({
     );
 
     try {
-      await fetch(`/api/posts/${id}/vote`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          voteType: type,
-          userHandle: user.handle || 'u/ananya_s',
-        }),
-      });
+      const result = await votePost(id, user.id, type);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                upvotes: result.newUpvotes,
+                hasUserUpvoted: result.userVote === 'up',
+                hasUserDownvoted: result.userVote === 'down',
+              }
+            : p
+        )
+      );
     } catch (err) {
-      console.error('Vote sync error:', err);
+      console.error('Vote sync error in Firestore:', err);
+      loadPostsFromDb();
     }
   };
 
-  // Handle save post
+  // Handle save post via Firestore
   const handleToggleSave = async (id: string) => {
+    if (!user.id) {
+      notify('Please sign in to bookmark posts', 'info');
+      return;
+    }
+
     let nextState = false;
     setPosts((prev) =>
       prev.map((p) => {
@@ -165,18 +251,12 @@ export default function AllCampusFeed({
       })
     );
 
-    notify(nextState ? 'Saved to Your Space' : 'Removed from saved', 'info');
-
     try {
-      await fetch(`/api/posts/${id}/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userHandle: user.handle || 'u/ananya_s',
-        }),
-      });
+      const isSaved = await toggleSavePost(user.id, id);
+      notify(isSaved ? 'Saved to Your Space' : 'Removed from saved', 'info');
     } catch (err) {
       console.error('Save toggle error:', err);
+      notify('Failed to update bookmark', 'info');
     }
   };
 
@@ -189,7 +269,7 @@ export default function AllCampusFeed({
     }
   };
 
-  // Toggle comments
+  // Toggle comments via Firestore
   const handleToggleComments = async (postId: string) => {
     if (expandedCommentsPostId === postId) {
       setExpandedCommentsPostId(null);
@@ -201,94 +281,85 @@ export default function AllCampusFeed({
     if (!commentsMap[postId]) {
       setLoadingComments(true);
       try {
-        const res = await fetch(`/api/posts/${postId}/comments`);
-        if (res.ok) {
-          const data = await res.json();
-          setCommentsMap((prev) => ({ ...prev, [postId]: data.comments || [] }));
-        }
+        const comments = await listComments(postId);
+        setCommentsMap((prev) => ({ ...prev, [postId]: comments }));
       } catch (err) {
-        console.warn('Failed to load comments:', err);
+        console.warn('Failed to load comments from Firestore:', err);
       } finally {
         setLoadingComments(false);
       }
     }
   };
 
-  // Add comment
+  // Add comment via Firestore
   const handleAddComment = async (postId: string) => {
     if (!commentDraft.trim() || isSubmittingComment) return;
+    if (!user.id) {
+      notify('Please sign in to reply', 'info');
+      return;
+    }
 
     setIsSubmittingComment(true);
     try {
-      const res = await fetch(`/api/posts/${postId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: commentDraft.trim(),
-          author: user.username || 'Student',
-          authorHandle: user.handle || 'u/ananya_s',
-          authorRole: user.role || 'Student',
-        }),
+      const newComment = await addComment(postId, {
+        authorId: user.id,
+        author: user.username || 'Campus Student',
+        authorRole: user.role || 'Student',
+        content: commentDraft.trim(),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setCommentsMap((prev) => ({
-          ...prev,
-          [postId]: [...(prev[postId] || []), data.comment],
-        }));
-        setCommentDraft('');
-        setPosts((prev) =>
-          prev.map((p) => (p.id === postId ? { ...p, commentsCount: p.commentsCount + 1 } : p))
-        );
-        notify('Reply published', 'success');
-      }
+      setCommentsMap((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), newComment],
+      }));
+      setCommentDraft('');
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, commentsCount: p.commentsCount + 1 } : p))
+      );
+      notify('Reply published', 'success');
     } catch (err) {
-      console.error('Failed to post comment:', err);
+      console.error('Failed to post comment to Firestore:', err);
+      notify('Failed to post reply', 'info');
     } finally {
       setIsSubmittingComment(false);
     }
   };
 
-  // Toggle Community Join
-  const handleToggleJoin = async (communityName: string) => {
+  // Toggle Community Join via Firestore
+  const handleToggleJoin = async (communityName: string, communityId?: string) => {
+    if (!user.id) {
+      notify('Please sign in to join communities', 'info');
+      return;
+    }
+
     const current = !!joinedCommunities[communityName];
     setJoinedCommunities((prev) => ({ ...prev, [communityName]: !current }));
     notify(!current ? `Joined ${communityName}` : `Left ${communityName}`, 'info');
 
     try {
-      const cleanSlug = communityName.toLowerCase().replace(/\s+/g, '_');
-      await fetch(`/api/communities/${cleanSlug}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userHandle: user.handle || 'u/ananya_s' }),
-      });
+      const commId = communityId || communityName.toLowerCase().replace(/\s+/g, '-');
+      if (!current) {
+        await joinCommunity(commId, user.id, user.handle);
+      } else {
+        await leaveCommunity(commId, user.id);
+      }
     } catch (err) {
-      console.warn('Join sync error:', err);
+      console.warn('Join sync error in Firestore:', err);
     }
   };
 
-  // Merge newly created post into posts list
+  // Merge newly created post if provided
   const mergedPosts =
     newCreatedPost && !posts.some((p) => p.id === newCreatedPost.id)
       ? [newCreatedPost, ...posts]
       : posts;
-
-  // Filter posts based on mode
-  const displayedPosts = mergedPosts.filter((p) => {
-    if (mode === 'saved') return p.isSaved;
-    if (mode === 'activity') return p.author === (user.handle || 'u/ananya_s') || p.hasUserUpvoted;
-    return true;
-  });
 
   return (
     <div className="max-w-[1240px] mx-auto px-3 sm:px-6 py-4 sm:py-6">
       <div className="flex flex-col xl:flex-row gap-6 justify-center items-start">
         {/* Main Feed Column */}
         <main className="w-full xl:max-w-[760px] flex-1 space-y-4">
-          {/* ======================================================== */}
-          {/* SIGNATURE CAMPUS PULSE: THE ESSENCE OF CAMPUSCONNECT      */}
-          {/* ======================================================== */}
+          {/* CAMPUS PULSE */}
           {mode === 'all' && (
             <CampusPulse
               user={user}
@@ -310,10 +381,10 @@ export default function AllCampusFeed({
               </h1>
               <p className="text-xs sm:text-sm text-muted mt-0.5">
                 {mode === 'saved'
-                  ? 'Posts you bookmarked to reference or review later'
+                  ? 'Posts you bookmarked in Firestore'
                   : mode === 'activity'
-                  ? 'Discussions you created, joined, or upvoted'
-                  : 'Official announcements, projects, and discussions'}
+                  ? 'Discussions you authored or upvoted'
+                  : 'Live announcements, projects, and discussions'}
               </p>
             </div>
 
@@ -354,7 +425,7 @@ export default function AllCampusFeed({
               <button
                 type="button"
                 onClick={onOpenCreatePost}
-                className="btn-primary min-h-[40px] px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm shadow-[0_2px_8px_rgba(255,104,72,0.25)]"
+                className="btn-primary min-h-[40px] px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm shadow-[0_2px_8px_rgba(255,104,72,0.25)] cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>New Post</span>
@@ -362,39 +433,79 @@ export default function AllCampusFeed({
             </div>
           </div>
 
-          {/* Posts List */}
-          {displayedPosts.length === 0 ? (
-            <div className="surface-elevated rounded-2xl p-8 sm:p-12 text-center space-y-3 shadow-2xs">
+          {/* Error State */}
+          {fetchError && (
+            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs sm:text-sm flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{fetchError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={loadPostsFromDb}
+                className="px-3 py-1 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-600 transition flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Retry</span>
+              </button>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {isLoading && (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="surface-elevated rounded-2xl p-5 border border-subtle animate-pulse space-y-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-24 h-3.5 bg-surface-muted rounded" />
+                    <div className="w-16 h-3.5 bg-surface-muted rounded" />
+                  </div>
+                  <div className="w-3/4 h-5 bg-surface-muted rounded" />
+                  <div className="w-full h-12 bg-surface-muted rounded" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isLoading && !fetchError && mergedPosts.length === 0 && (
+            <div className="surface-elevated rounded-2xl p-8 sm:p-12 text-center space-y-3 shadow-2xs border border-subtle">
               <div className="w-12 h-12 rounded-xl bg-surface-muted flex items-center justify-center mx-auto text-muted">
                 {mode === 'saved' ? <Bookmark className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
               </div>
               <h3 className="text-base font-semibold text-primary">
-                {mode === 'saved' ? 'No saved posts yet' : 'No posts found'}
+                {mode === 'saved' ? 'No saved posts yet' : 'No posts yet'}
               </h3>
               <p className="text-xs text-muted max-w-sm mx-auto">
                 {mode === 'saved'
-                  ? 'Click the Save button on any post to bookmark it here for fast access.'
-                  : 'Start a conversation by publishing a new post to the campus feed.'}
+                  ? 'Click the bookmark icon on any campus post to save it to your personal space.'
+                  : 'Be the first member to publish a notice, project update, or discussion topic!'}
               </p>
               <button
                 type="button"
                 onClick={onOpenCreatePost}
-                className="btn-primary px-4 py-2 text-xs font-semibold"
+                className="btn-primary px-4 py-2 text-xs font-semibold cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Create a Post</span>
               </button>
             </div>
-          ) : (
-            displayedPosts.map((post) => {
+          )}
+
+          {/* Post Items */}
+          {!isLoading &&
+            mergedPosts.map((post) => {
               const displayCommunity = cleanCommunityTitle(post.community);
 
               return (
                 <article
                   key={post.id}
-                  className="surface-elevated rounded-2xl p-4 sm:p-5 transition space-y-3"
+                  className="surface-elevated rounded-2xl p-4 sm:p-5 transition space-y-3 border border-subtle"
                 >
-                  {/* 1. Community + Time + Author */}
+                  {/* Community + Time + Author */}
                   <div className="flex items-center justify-between text-xs sm:text-[13px] text-muted">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span
@@ -411,32 +522,32 @@ export default function AllCampusFeed({
                       <span className="text-muted">·</span>
                       <span>{post.timestamp || 'Just now'}</span>
                       <span className="hidden sm:inline text-muted">·</span>
-                      <span className="hidden sm:inline text-muted">
+                      <span className="hidden sm:inline text-muted font-medium">
                         by {post.author.replace(/^u\//, '')}
                       </span>
                     </div>
 
                     {/* Contextual Pinned Badge */}
-                    {post.pinned ? (
+                    {post.pinned && (
                       <span className="text-[11px] font-bold text-[#FF6848] bg-brand-surface px-2 py-0.5 rounded border border-brand-border">
-                        {post.pinnedLabel || 'PINNED'}
+                        {post.pinnedLabel || 'OFFICIAL'}
                       </span>
-                    ) : null}
+                    )}
                   </div>
 
-                  {/* 2. Post Title */}
+                  {/* Post Title */}
                   <h2 className="text-base sm:text-lg font-bold text-primary leading-snug tracking-tight">
                     {post.title}
                   </h2>
 
-                  {/* 3. Body */}
+                  {/* Body */}
                   {post.content && (
-                    <p className="text-xs sm:text-sm text-secondary leading-relaxed whitespace-pre-line line-clamp-4 sm:line-clamp-none">
+                    <p className="text-xs sm:text-sm text-secondary leading-relaxed whitespace-pre-line line-clamp-4 sm:line-clamp-none font-medium">
                       {post.content}
                     </p>
                   )}
 
-                  {/* 4. Attachment / Event Block if present */}
+                  {/* Attachment Block if present */}
                   {post.attachment && (
                     <div className="p-3 rounded-xl border border-subtle bg-surface-muted/80 flex items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -446,139 +557,147 @@ export default function AllCampusFeed({
                             {post.attachment.fileName || 'Attached Document'}
                           </div>
                           <div className="text-[11px] text-muted truncate">
-                            {post.attachment.metaText || 'Official Document'}
+                            {post.attachment.metaText || post.attachment.fileSize || 'Verified Document'}
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onOpenPdfModal(post.attachment?.fileName || 'document.pdf')}
-                        className="btn-secondary min-h-[36px] px-3 text-xs font-semibold shrink-0"
-                      >
-                        {post.attachment?.fileName?.toLowerCase().includes('notice') || post.attachment?.fileName?.toLowerCase().includes('circular') ? 'View Notice' : 'Open Document'}
-                      </button>
+
+                      {post.attachment.fileName && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (post.attachment?.imageUrl) {
+                              window.open(post.attachment.imageUrl, '_blank');
+                            } else {
+                              onOpenPdfModal(post.attachment!.fileName || 'document.pdf');
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-surface hover:bg-brand-surface text-[#FF6848] border border-subtle font-bold text-xs shrink-0 transition cursor-pointer"
+                        >
+                          View Document
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {/* 5. Streamlined Action Row (Compact Vote + Discuss + Save + Ask AI + Share) */}
-                  <div className="flex items-center justify-between sm:justify-start gap-1 sm:gap-2.5 pt-2.5 border-t border-subtle text-xs sm:text-[13px] font-medium text-secondary">
-                    {/* Compact Voting */}
-                    <div className="flex items-center bg-surface-muted rounded-lg p-0.5 border border-subtle">
+                  {/* Actions Footer: Upvote, Comments, Share, Save */}
+                  <div className="flex items-center justify-between pt-2 border-t border-subtle text-xs">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {/* Upvote Pill */}
+                      <div className="flex items-center bg-surface-muted border border-subtle rounded-xl p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post.id, 'up')}
+                          aria-label="Upvote post"
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            post.hasUserUpvoted
+                              ? 'text-[#FF6848] bg-brand-surface font-bold'
+                              : 'text-muted hover:text-primary'
+                          }`}
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <span
+                          className={`px-1.5 text-xs font-bold ${
+                            post.hasUserUpvoted
+                              ? 'text-[#FF6848]'
+                              : post.hasUserDownvoted
+                              ? 'text-blue-500'
+                              : 'text-primary'
+                          }`}
+                        >
+                          {post.upvotes}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleVote(post.id, 'down')}
+                          aria-label="Downvote post"
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            post.hasUserDownvoted
+                              ? 'text-blue-500 bg-blue-500/10 font-bold'
+                              : 'text-muted hover:text-primary'
+                          }`}
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Comments Toggle */}
                       <button
                         type="button"
-                        onClick={() => handleVote(post.id, 'up')}
-                        aria-label="Upvote"
-                        className={`min-h-[40px] min-w-[34px] sm:min-h-[34px] sm:min-w-[32px] flex items-center justify-center rounded-md transition cursor-pointer ${
-                          post.hasUserUpvoted
-                            ? 'text-[#FF6848] bg-surface font-bold shadow-2xs'
-                            : 'text-muted hover:text-[#FF6848] hover:bg-surface'
+                        onClick={() => handleToggleComments(post.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-subtle transition cursor-pointer ${
+                          expandedCommentsPostId === post.id
+                            ? 'bg-surface text-[#FF6848] border-brand-border font-bold'
+                            : 'bg-surface-muted text-secondary hover:text-primary'
                         }`}
                       >
-                        <ArrowUp className="w-4 h-4" />
-                      </button>
-                      <span className={`px-1.5 text-xs sm:text-[13px] font-bold ${post.hasUserUpvoted ? 'text-[#FF6848]' : 'text-primary'}`}>
-                        {post.upvotes}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleVote(post.id, 'down')}
-                        aria-label="Downvote"
-                        className="min-h-[40px] min-w-[34px] sm:min-h-[34px] sm:min-w-[32px] flex items-center justify-center rounded-md transition text-muted hover:text-primary hover:bg-surface cursor-pointer"
-                      >
-                        <ArrowDown className="w-4 h-4" />
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span className="font-semibold">{post.commentsCount}</span>
+                        <span className="hidden sm:inline">Replies</span>
                       </button>
                     </div>
 
-                    {/* Secondary 1: Discuss */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleComments(post.id)}
-                      aria-label="Discussion"
-                      className="min-h-[44px] sm:min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-surface-muted hover:text-primary transition cursor-pointer font-medium text-secondary"
-                    >
-                      <MessageSquare className="w-4 h-4 text-muted" />
-                      <span>{post.commentsCount}</span>
-                      <span className="hidden sm:inline">Discuss</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {/* Share */}
+                      <button
+                        type="button"
+                        onClick={() => handleShare(post)}
+                        title="Copy link"
+                        className="p-2 text-muted hover:text-primary hover:bg-surface-muted rounded-xl transition cursor-pointer"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
 
-                    {/* Secondary 2: Save */}
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSave(post.id)}
-                      aria-label={post.isSaved ? 'Remove from saved' : 'Save post'}
-                      className={`min-h-[44px] sm:min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition cursor-pointer font-medium ${
-                        post.isSaved
-                          ? 'text-[#FF6848] bg-brand-surface'
-                          : 'text-muted hover:bg-surface-muted hover:text-primary'
-                      }`}
-                    >
-                      <Bookmark className="w-4 h-4" fill={post.isSaved ? '#FF6848' : 'none'} />
-                      <span className="hidden sm:inline">{post.isSaved ? 'Saved' : 'Save'}</span>
-                    </button>
-
-                    {/* Accent: Ask AI */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(
-                          new CustomEvent('open-campus-ai', {
-                            detail: { prompt: `Summarize the campus discussion and key takeaways for: "${post.title}"` },
-                          })
-                        );
-                      }}
-                      aria-label="Ask Campus AI"
-                      className="min-h-[44px] sm:min-h-[36px] flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[#FF6848] bg-brand-surface hover:bg-[#FF6848]/20 transition cursor-pointer font-semibold border border-brand-border"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline font-ai">Ask AI</span>
-                    </button>
-
-                    {/* Tertiary: Share */}
-                    <button
-                      type="button"
-                      onClick={() => handleShare(post)}
-                      aria-label="Share post"
-                      className="btn-tertiary min-h-[44px] sm:min-h-[36px] px-2.5 text-muted hover:text-primary"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </button>
+                      {/* Bookmark Save */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSave(post.id)}
+                        title={post.isSaved ? 'Remove bookmark' : 'Bookmark post'}
+                        className={`p-2 rounded-xl transition cursor-pointer ${
+                          post.isSaved
+                            ? 'text-[#FF6848] bg-brand-surface'
+                            : 'text-muted hover:text-primary hover:bg-surface-muted'
+                        }`}
+                      >
+                        <Bookmark className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Inline Discussion Drawer */}
+                  {/* Expanded Comments Panel */}
                   {expandedCommentsPostId === post.id && (
-                    <div className="pt-3 border-t border-subtle space-y-3">
-                      <span className="text-xs font-semibold text-muted block">
-                        Discussion ({commentsMap[post.id]?.length || post.commentsCount})
-                      </span>
-
-                      {/* Comments list */}
-                      <div className="space-y-2">
-                        {loadingComments ? (
-                          <div className="flex items-center gap-2 text-xs text-muted py-2">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FF6848]" />
-                            <span>Loading discussion replies...</span>
-                          </div>
-                        ) : commentsMap[post.id]?.length === 0 ? (
-                          <div className="text-xs text-muted py-1">
-                            No comments yet. Start the conversation below.
-                          </div>
-                        ) : (
-                          commentsMap[post.id]?.map((c) => (
+                    <div className="pt-3 space-y-3 border-t border-subtle animate-in fade-in duration-150">
+                      {/* Comments List */}
+                      {loadingComments ? (
+                        <div className="py-4 text-center text-xs text-muted flex items-center justify-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FF6848]" />
+                          <span>Loading discussion thread from Firestore...</span>
+                        </div>
+                      ) : (commentsMap[post.id] || []).length === 0 ? (
+                        <p className="text-xs text-muted italic py-2">
+                          No replies yet. Be the first to leave a comment!
+                        </p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {(commentsMap[post.id] || []).map((comm) => (
                             <div
-                              key={c.id}
-                              className="p-2.5 rounded-xl bg-surface-muted border border-subtle space-y-1 text-xs"
+                              key={comm.id}
+                              className="p-2.5 rounded-xl bg-surface-muted border border-subtle text-xs space-y-1"
                             >
                               <div className="flex items-center justify-between text-muted">
-                                <span className="font-semibold text-primary">{c.author}</span>
-                                <span>{c.timestamp}</span>
+                                <span className="font-bold text-primary">{comm.author}</span>
+                                <span>{comm.timestamp}</span>
                               </div>
-                              <p className="text-secondary">{c.content}</p>
+                              <p className="text-secondary leading-relaxed font-medium">
+                                {comm.content}
+                              </p>
                             </div>
-                          ))
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
 
-                      {/* Add Comment input */}
+                      {/* Add Comment Input */}
                       <div className="flex items-center gap-2 pt-1">
                         <input
                           type="text"
@@ -588,13 +707,13 @@ export default function AllCampusFeed({
                             if (e.key === 'Enter') handleAddComment(post.id);
                           }}
                           placeholder="Write a constructive reply..."
-                          className="flex-1 px-3 py-1.5 text-xs bg-surface-muted border border-subtle rounded-lg outline-none focus:border-[#FF6848] focus:bg-surface text-primary"
+                          className="flex-1 px-3 py-2 text-xs bg-surface-muted border border-subtle rounded-lg outline-none focus:border-[#FF6848] focus:bg-surface text-primary font-medium"
                         />
                         <button
                           type="button"
                           onClick={() => handleAddComment(post.id)}
                           disabled={!commentDraft.trim() || isSubmittingComment}
-                          className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40 shrink-0"
+                          className="btn-primary px-3 py-2 text-xs disabled:opacity-40 shrink-0 cursor-pointer flex items-center gap-1.5"
                         >
                           {isSubmittingComment ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -608,14 +727,13 @@ export default function AllCampusFeed({
                   )}
                 </article>
               );
-            })
-          )}
+            })}
         </main>
 
-        {/* Secondary Right Rail (Subordinate exploration layer, collapses cleanly on smaller viewports) */}
+        {/* Right Sidebar Rail */}
         <aside className="hidden xl:block w-[290px] shrink-0 space-y-3.5">
-          {/* 1. What's Next: Upcoming Deadlines & Logistics */}
-          <div className="surface-elevated rounded-2xl p-4 shadow-2xs">
+          {/* Upcoming Key Dates */}
+          <div className="surface-elevated rounded-2xl p-4 shadow-2xs border border-subtle">
             <div className="flex items-center justify-between pb-2 border-b border-subtle">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-[#FF6848]" />
@@ -653,8 +771,8 @@ export default function AllCampusFeed({
             </div>
           </div>
 
-          {/* 2. Active Spaces: 2-3 active student communities */}
-          <div className="surface-elevated rounded-2xl p-4 shadow-2xs">
+          {/* Active Spaces */}
+          <div className="surface-elevated rounded-2xl p-4 shadow-2xs border border-subtle">
             <div className="flex items-center justify-between pb-2 border-b border-subtle">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#FF6848]" />
@@ -670,12 +788,8 @@ export default function AllCampusFeed({
             </div>
 
             <div className="pt-2.5 space-y-2.5">
-              {[
-                { name: 'Coding & Algorithms', activity: '42 members active', slug: 'coding_algorithms' },
-                { name: 'Robotics Club', activity: 'Lab 402 updates · 1.4k members', slug: 'robotics-club' },
-                { name: 'Hackathon Commons', activity: '18 discussions today', slug: 'hackathon_teams' },
-              ].map((comm) => (
-                <div key={comm.name} className="flex items-center justify-between py-0.5">
+              {sidebarCommunities.map((comm) => (
+                <div key={comm.id} className="flex items-center justify-between py-0.5">
                   <div
                     onClick={() => {
                       if (onSelectView) {
@@ -683,16 +797,16 @@ export default function AllCampusFeed({
                         else onSelectView('communities');
                       }
                     }}
-                    className="cursor-pointer truncate pr-2 group"
+                    className="cursor-pointer truncate pr-2 group min-w-0"
                   >
                     <div className="font-semibold text-xs sm:text-[13px] text-primary group-hover:text-[#FF6848] truncate transition">
                       {comm.name}
                     </div>
-                    <div className="text-xs text-muted">{comm.activity}</div>
+                    <div className="text-[11px] text-muted">{comm.memberCount} members</div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleToggleJoin(comm.name)}
+                    onClick={() => handleToggleJoin(comm.name, comm.id)}
                     className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition shrink-0 cursor-pointer ${
                       joinedCommunities[comm.name]
                         ? 'btn-secondary text-xs py-1 px-2.5'

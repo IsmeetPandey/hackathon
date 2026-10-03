@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { PostItem, UserProfile } from '@/types';
-import { DEMO_MODE } from '@/lib/mockData';
+import React, { useState, useRef } from 'react';
+import { PostItem, UserProfile, PostAttachment } from '@/types';
 import ModalShell from '@/components/ui/ModalShell';
-import { PenSquare, Paperclip, Loader2, AlertCircle } from 'lucide-react';
+import { createPost, uploadPostAttachment } from '@/lib/dbService';
+import { PenSquare, Paperclip, Loader2, AlertCircle, CheckCircle2, X } from 'lucide-react';
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -14,12 +14,13 @@ interface CreatePostModalProps {
 }
 
 const COMMUNITY_OPTIONS = [
-  { value: 'all-campus', label: 'Campus Feed' },
-  { value: 'RoboticsClub', label: 'Robotics Club' },
-  { value: 'coding_algorithms', label: 'Coding & Algorithms' },
-  { value: 'examination_cell', label: 'Examination Cell' },
-  { value: 'placement_office', label: 'Career & Placements' },
-  { value: 'hackathon_teams', label: 'Hackathon Commons' },
+  { value: 'Campus Feed', label: 'Campus Feed' },
+  { value: 'Robotics Club', label: 'Robotics Club' },
+  { value: 'Coding & Algorithms', label: 'Coding & Algorithms' },
+  { value: 'Hackathon Commons', label: 'Hackathon Commons' },
+  { value: 'Examination Cell', label: 'Examination Cell' },
+  { value: 'Career & Placements', label: 'Career & Placements' },
+  { value: 'IEEE Student Branch', label: 'IEEE Student Branch' },
 ];
 
 export default function CreatePostModal({
@@ -28,13 +29,33 @@ export default function CreatePostModal({
   onSubmitPost,
   user,
 }: CreatePostModalProps) {
-  const [selectedCommunity, setSelectedCommunity] = useState('all-campus');
+  const [selectedCommunity, setSelectedCommunity] = useState('Campus Feed');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [attachmentName, setAttachmentName] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 25 * 1024 * 1024) {
+      setErrorMessage('File exceeds the 25MB maximum size limit.');
+      return;
+    }
+    setSelectedFile(file);
+    setErrorMessage(null);
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,46 +72,55 @@ export default function CreatePostModal({
       return;
     }
 
+    if (!user.id) {
+      setErrorMessage('Please sign in to publish posts.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const payload = {
+      let attachmentData: PostAttachment | undefined = undefined;
+
+      // 1. Upload file to Firebase Storage if selected
+      if (selectedFile) {
+        setUploadStatus('Uploading attachment to Firebase Storage...');
+        try {
+          const uploadResult = await uploadPostAttachment(selectedFile, 'posts');
+          attachmentData = {
+            type: uploadResult.fileType === 'pdf' ? 'pdf' : 'image',
+            fileName: uploadResult.fileName,
+            fileSize: uploadResult.fileSize,
+            imageUrl: uploadResult.fileType === 'image' ? uploadResult.fileUrl : undefined,
+            metaText: `Verified Attachment · ${uploadResult.fileSize}`,
+            verifiedLabel: 'Uploaded Document',
+          };
+        } catch (uploadErr: any) {
+          throw new Error(`File upload failed: ${uploadErr.message || 'Storage error'}`);
+        }
+      }
+
+      setUploadStatus('Publishing post to Firestore...');
+
+      // 2. Create post in Firestore
+      const newPost = await createPost({
         title: trimmedTitle,
         content: content.trim() || 'No additional text provided.',
         community: selectedCommunity,
-        author: user.username || (user.handle ? user.handle.replace(/^u\//, '') : 'Ananya Sharma'),
+        authorId: user.id,
+        authorName: user.username || 'Campus Student',
+        authorHandle: user.handle,
         authorRole: user.role || 'Student',
-        attachment: attachmentName.trim()
-          ? {
-              type: attachmentName.endsWith('.pdf') ? 'pdf' : 'image',
-              fileName: attachmentName.trim(),
-              metaText: DEMO_MODE ? 'Attached Campus Document (Demo)' : 'Attached Campus Document',
-            }
-          : undefined,
-      };
-
-      const res = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        attachment: attachmentData,
       });
 
-      const data = await res.json();
+      onSubmitPost(newPost);
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Server rejected post submission.');
-      }
-
-      if (!data.post) {
-        throw new Error('Server returned invalid post data.');
-      }
-
-      onSubmitPost(data.post);
-
-      // Reset on success
+      // Reset form
       setTitle('');
       setContent('');
-      setAttachmentName('');
+      setSelectedFile(null);
+      setUploadStatus('');
       setErrorMessage(null);
       onClose();
     } catch (err: any) {
@@ -98,6 +128,7 @@ export default function CreatePostModal({
       setErrorMessage(err.message || 'An error occurred while publishing your post. Please try again.');
     } finally {
       setIsSubmitting(false);
+      setUploadStatus('');
     }
   };
 
@@ -108,7 +139,7 @@ export default function CreatePostModal({
       title="Create a Post"
       subtitle="Share an announcement, project update, or discussion with campus"
       icon={
-        <div className="w-8 h-8 rounded-lg bg-[#FFF4EE] text-[#FF4500] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-brand-surface text-[#FF6848] flex items-center justify-center border border-brand-border">
           <PenSquare className="w-4 h-4" />
         </div>
       }
@@ -119,7 +150,7 @@ export default function CreatePostModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="btn-secondary min-h-[38px] px-4 text-xs font-medium"
+            className="btn-secondary min-h-[38px] px-4 text-xs font-medium cursor-pointer"
           >
             Cancel
           </button>
@@ -127,13 +158,13 @@ export default function CreatePostModal({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || !title.trim()}
-            className="btn-primary min-h-[38px] px-5 text-xs font-semibold shadow-2xs disabled:opacity-50"
+            className="btn-primary min-h-[38px] px-5 text-xs font-semibold shadow-2xs disabled:opacity-50 cursor-pointer"
           >
             {isSubmitting ? (
-              <>
+              <span className="flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Publishing...</span>
-              </>
+                <span>{uploadStatus || 'Publishing...'}</span>
+              </span>
             ) : (
               <span>Publish Post</span>
             )}
@@ -149,7 +180,7 @@ export default function CreatePostModal({
           </div>
         )}
 
-        {/* 1. Community Selector (Human-readable without raw slugs) */}
+        {/* 1. Community Selector */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1.5">
             Post To
@@ -184,7 +215,7 @@ export default function CreatePostModal({
           />
         </div>
 
-        {/* 3. Content (Visual center) */}
+        {/* 3. Content */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1.5">
             What&apos;s on your mind?
@@ -199,54 +230,53 @@ export default function CreatePostModal({
           />
         </div>
 
-        {/* 4. Optional Attachment */}
+        {/* 4. Real Attachment Upload */}
         <div>
           <label className="block text-xs sm:text-[13px] font-bold text-secondary mb-1.5">
-            Attach Document (Optional)
+            Attach Document or Image (Optional)
           </label>
           <input
             type="file"
             ref={fileInputRef}
             className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                setAttachmentName(file.name);
-              }
-            }}
+            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.docx,.xlsx,.gcode"
+            onChange={handleFileSelect}
           />
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Paperclip className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
+
+          {selectedFile ? (
+            <div className="flex items-center justify-between p-3 bg-surface-muted border border-brand-border rounded-xl">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-brand-surface text-[#FF6848] flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-primary truncate">{selectedFile.name}</p>
+                  <p className="text-[11px] text-muted">
+                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Ready for upload
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveFile}
                 disabled={isSubmitting}
-                value={attachmentName}
-                onChange={(e) => setAttachmentName(e.target.value)}
-                placeholder="Attach document name or select file..."
-                className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm bg-surface-muted border border-subtle rounded-lg text-primary placeholder:text-muted focus:border-[#FF6848] focus:bg-surface outline-none"
-              />
+                className="p-1.5 text-muted hover:text-red-500 rounded-lg transition"
+                title="Remove file"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            {attachmentName ? (
-              <button
-                type="button"
-                onClick={() => setAttachmentName('')}
-                className="px-3 py-2 text-xs font-semibold text-red-500 hover:bg-red-500/10 rounded-lg transition shrink-0 cursor-pointer"
-              >
-                Remove
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => fileInputRef.current?.click()}
-                className="btn-secondary px-3.5 py-2 text-xs font-semibold shrink-0 cursor-pointer flex items-center gap-1.5"
-              >
-                <Paperclip className="w-3.5 h-3.5 text-muted" />
-                <span>Attach file</span>
-              </button>
-            )}
-          </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full p-3.5 border border-dashed border-subtle hover:border-[#FF6848] rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-secondary hover:text-[#FF6848] transition cursor-pointer bg-surface-muted/50"
+            >
+              <Paperclip className="w-4 h-4 text-muted" />
+              <span>Click to select PDF, Image, or Project file (max 25MB)</span>
+            </button>
+          )}
         </div>
       </form>
     </ModalShell>

@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, ViewMode, CampusPulseItem } from '@/types';
-import { CAMPUS_PULSE_ITEMS } from '@/lib/mockData';
+import { listNotices, listCommunities } from '@/lib/dbService';
 import {
   FileText,
   Calendar,
@@ -25,7 +25,78 @@ export default function CampusPulse({
   onOpenPdfModal,
   onOpenRsvpModal,
 }: CampusPulseProps) {
-  const [isMinimized, setIsMinimized] = React.useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [pulseItems, setPulseItems] = useState<CampusPulseItem[]>([]);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadLivePulse() {
+      try {
+        const [notices, communities] = await Promise.all([
+          listNotices(2),
+          listCommunities(),
+        ]);
+
+        if (ignore) return;
+
+        const items: CampusPulseItem[] = [];
+
+        // 1. Top Notice from Firestore
+        if (notices.length > 0) {
+          const topNotice = notices[0];
+          items.push({
+            id: 'pulse-notice-1',
+            type: 'notice',
+            title: topNotice.title,
+            metadata: `${topNotice.source} · ${topNotice.documentDate || 'Recent'}`,
+            summary: topNotice.summaryBullets?.[0] || 'Official university circular directive.',
+            actionLabel: 'View Circular',
+            targetView: 'notices',
+            targetData: topNotice.fileName,
+            tagText: 'Official Directive',
+          });
+        }
+
+        // 2. Upcoming Hands-on Workshop
+        items.push({
+          id: 'pulse-event-1',
+          type: 'event',
+          title: 'Autonomous Robotics & ROS2 Navigation Stack Workshop',
+          metadata: 'Robotics Club · Tomorrow 4:00 PM',
+          summary: 'Hands-on SLAM mapping, sensor fusion, and Nav2 stack configuration in Lab 402.',
+          actionLabel: 'Reserve Seat',
+          targetView: 'robotics-club',
+          targetData: 'Autonomous Robotics & ROS2 Workshop',
+          tagText: 'Lab Workshop',
+        });
+
+        // 3. Top Active Space
+        if (communities.length > 0) {
+          const topComm = communities[0];
+          items.push({
+            id: 'pulse-comm-1',
+            type: 'community',
+            title: `${topComm.name}: Active student collaboration`,
+            metadata: `c/${topComm.slug} · ${topComm.memberCount} Members`,
+            summary: topComm.description,
+            actionLabel: 'Explore Space',
+            targetView: topComm.slug.includes('robotics') ? 'robotics-club' : 'communities',
+            targetData: topComm.slug,
+            tagText: 'Community Spotlight',
+          });
+        }
+
+        setPulseItems(items);
+      } catch (err) {
+        console.warn('Error loading live campus pulse from Firestore:', err);
+      }
+    }
+
+    loadLivePulse();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handlePulseAction = (item: CampusPulseItem) => {
     if (item.type === 'notice') {
@@ -61,12 +132,12 @@ export default function CampusPulse({
   return (
     <section
       aria-label="Campus Pulse"
-      className="surface-pulse rounded-2xl p-3.5 sm:p-5 transition-all duration-300 relative overflow-hidden group shadow-2xs"
+      className="surface-pulse rounded-2xl p-3.5 sm:p-5 transition-all duration-300 relative overflow-hidden group shadow-2xs border border-subtle"
     >
       {/* Top brand accent marker */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#FF6848] via-[#F43F5E] to-[#6366F1]" />
 
-      {/* Header Row: Clean, unified briefing headline + minimize/expand control */}
+      {/* Header Row */}
       <div className="flex items-center justify-between pb-2.5 border-b border-subtle">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full bg-[#FF6848] ring-4 ring-[#FF6848]/20 shrink-0 animate-pulse" />
@@ -74,18 +145,18 @@ export default function CampusPulse({
             <h2 className="font-brand text-base sm:text-xl font-bold text-primary tracking-tight flex items-center gap-2">
               <span>Campus Pulse</span>
               <span className="text-[10px] sm:text-xs font-bold text-[#FF6848] bg-brand-surface px-2 py-0.5 rounded-full border border-brand-border">
-                Today
+                Live
               </span>
             </h2>
             <p className="text-[11px] sm:text-xs text-muted font-medium truncate">
               {isMinimized
-                ? '3 key items: Exam Notice · ROS2 Workshop · Active Clubs'
+                ? 'Key updates: Exam Directives · Lab Workshops · Active Spaces'
                 : 'Your campus, at a glance'}
             </p>
           </div>
         </div>
 
-        {/* Action controls: Minimize / Expand toggle */}
+        {/* Minimize / Expand Toggle */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
@@ -105,12 +176,11 @@ export default function CampusPulse({
         </div>
       </div>
 
-      {/* Collapsible Content Section */}
+      {/* Collapsible Content */}
       {!isMinimized && (
         <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Content Columns: unified background with subtle vertical dividers on desktop, stacked rows on mobile */}
           <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-subtle pt-2">
-            {CAMPUS_PULSE_ITEMS.map((item, index) => {
+            {pulseItems.map((item, index) => {
               let IconComponent = FileText;
               if (item.type === 'event') IconComponent = Calendar;
               if (item.type === 'community') IconComponent = Users;
@@ -160,7 +230,7 @@ export default function CampusPulse({
             })}
           </div>
 
-          {/* Campus AI Integrated Signature Action */}
+          {/* Campus AI Trigger */}
           <div className="mt-3 pt-2.5 border-t border-subtle">
             <button
               type="button"

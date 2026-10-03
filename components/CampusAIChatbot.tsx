@@ -87,14 +87,9 @@ export default function CampusAIChatbot() {
         throw new Error('AI API responded with error');
       }
     } catch (err) {
-      console.warn('AI query fallback triggered:', err);
-      let fallbackReply =
-        'According to the latest campus directives:\n• Semester examinations commence as scheduled.\n• Timetable Clash Resolution portal locks this week at 23:59 IST.\n• Central Library Reading Rooms C & D remain open 24/7 during finals.';
-
-      if (promptText.toLowerCase().includes('event') || promptText.toLowerCase().includes('club')) {
-        fallbackReply =
-          'Upcoming Campus Events:\n• Autonomous Robotics & ROS2 Workshop: Tomorrow at 4:00 PM in Makerspace 402.\n• Hackathon team formation is active in Hackathon Commons.';
-      }
+      console.warn('AI query error:', err);
+      const fallbackReply =
+        "I'm unable to retrieve verified campus records at the moment. Please try asking again in a few moments.";
 
       const fallbackId = messageCounterRef.current++;
       setMessages((prev) => [

@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '@/types';
-import { DEMO_MODE } from '@/lib/mockData';
 import { useAuth } from '@/context/AuthContext';
 import {
   Lock,
@@ -78,43 +77,20 @@ export default function AcademicLoginPortal({
           password,
           fullName,
           isFaculty ? 'Faculty' : 'Student',
-          'Computer Science & Engineering'
+          'General Academic'
         );
         onLoginSuccess(registeredProfile);
       }
     } catch (err: any) {
       console.warn('Firebase auth attempt error:', err);
-      // If user account is not found in auth, attempt auto-registration for seamless evaluator demo
       if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        try {
-          const isFaculty = identifier.toUpperCase().includes('FAC');
-          const registeredProfile = await registerWithEmail(
-            emailToUse,
-            password.length >= 6 ? password : 'studentPass2024',
-            fullName || (isFaculty ? 'Dr. Vikram Raman' : 'Ananya Sharma'),
-            isFaculty ? 'Faculty' : 'Student'
-          );
-          onLoginSuccess(registeredProfile);
-          return;
-        } catch (regErr: any) {
-          setErrorMessage(err.message || 'Authentication failed. Please verify credentials.');
-        }
+        setErrorMessage('Invalid credentials. Please verify your email and password, or create an account.');
       } else if (err.code === 'auth/weak-password') {
         setErrorMessage('Password must be at least 6 characters.');
       } else if (err.code === 'auth/email-already-in-use') {
-        setErrorMessage('An account with this email/ID already exists. Try signing in.');
+        setErrorMessage('An account with this email already exists. Please sign in instead.');
       } else {
-        // Fallback for evaluator environment
-        const isFaculty = identifier.toUpperCase().includes('FAC');
-        const fallbackProfile: UserProfile = {
-          ...user,
-          username: isFaculty ? 'Dr. Vikram Raman' : 'Ananya Sharma',
-          handle: isFaculty ? 'u/v_raman' : 'u/ananya_s',
-          email: emailToUse,
-          role: isFaculty ? 'Faculty' : 'Student',
-          isLoggedIn: true,
-        };
-        onLoginSuccess(fallbackProfile);
+        setErrorMessage(err.message || 'Authentication failed. Please check your credentials.');
       }
     } finally {
       setIsLoading(false);
@@ -139,6 +115,9 @@ export default function AcademicLoginPortal({
       setIsLoading(false);
       onLoginSuccess({
         ...user,
+        username: 'Campus Student',
+        handle: 'u/student',
+        email: `${mobileNumber}@sms.campus.edu`,
         isLoggedIn: true,
       });
     }, 500);
@@ -151,16 +130,8 @@ export default function AcademicLoginPortal({
       const googleProfile = await loginWithGoogle();
       onLoginSuccess(googleProfile);
     } catch (err: any) {
-      console.warn('Google sign in popup error:', err);
-      // Graceful fallback for popup blockers / iFrame
-      onLoginSuccess({
-        ...user,
-        username: 'Ananya Sharma',
-        handle: 'u/ananya_s',
-        email: 'ananya.s@campus.edu',
-        role: 'Student',
-        isLoggedIn: true,
-      });
+      console.warn('Google sign in error:', err);
+      setErrorMessage(err?.message || 'Google sign-in was interrupted or blocked. Please try email sign in.');
     } finally {
       setIsLoading(false);
     }
