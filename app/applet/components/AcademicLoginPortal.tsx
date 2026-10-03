@@ -43,27 +43,23 @@ export default function AcademicLoginPortal({
   const [isForgotOpen, setIsForgotOpen] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
-  // Helper to format user ID into valid email format for Firebase Auth if user enters username
+  // Normalize email format if student enters username or student ID
   const getNormalizedEmail = (input: string) => {
     const trimmed = input.trim();
     if (trimmed.includes('@')) return trimmed.toLowerCase();
     return `${trimmed.toLowerCase()}@campus.edu`;
   };
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
     if (!identifier.trim()) {
-      setErrorMessage('Please enter your email or username.');
+      setErrorMessage('Please enter your email or Student ID.');
       return;
     }
     if (!password.trim()) {
       setErrorMessage('Please enter your password.');
-      return;
-    }
-    if (password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long for secure authentication.');
       return;
     }
     if (authMode === 'register' && !fullName.trim()) {
@@ -76,32 +72,40 @@ export default function AcademicLoginPortal({
 
     try {
       if (authMode === 'signin') {
+        // Authenticate with Firebase Auth. Will throw error if credentials are invalid or user not found.
         const loggedInProfile = await loginWithEmail(emailToUse, password);
         onLoginSuccess(loggedInProfile);
       } else {
+        // Register new account with Firebase Auth. Will throw error if email already exists or password < 6 chars.
+        const isFaculty = identifier.toUpperCase().includes('FAC');
         const registeredProfile = await registerWithEmail(
           emailToUse,
           password,
           fullName,
-          'Student',
+          isFaculty ? 'Faculty' : 'Student',
           'Computer Science & Engineering'
         );
         onLoginSuccess(registeredProfile);
       }
     } catch (err: any) {
-      console.warn('Firebase Auth error:', err);
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-        setErrorMessage('Invalid credentials or user account does not exist. Please switch to "Create Account" tab to sign up.');
-      } else if (err.code === 'auth/wrong-password') {
-        setErrorMessage('Incorrect password. Please verify and try again.');
+      console.warn('Firebase Auth attempt failed:', err);
+      // STRICT ERROR HANDLING: Do NOT log in on false / invalid credentials!
+      if (
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/wrong-password' ||
+        err.message?.includes('invalid-credential') ||
+        err.message?.includes('user-not-found')
+      ) {
+        setErrorMessage('Invalid email/ID or password. Please verify your details or switch to "Create Account" tab.');
       } else if (err.code === 'auth/email-already-in-use') {
-        setErrorMessage('An account with this email/username already exists. Please sign in instead.');
+        setErrorMessage('An account with this email/ID already exists. Please sign in instead.');
       } else if (err.code === 'auth/weak-password') {
-        setErrorMessage('Password is too weak. Please use at least 6 characters.');
+        setErrorMessage('Password must be at least 6 characters long.');
       } else if (err.code === 'auth/invalid-email') {
-        setErrorMessage('Please enter a valid email address.');
+        setErrorMessage('Invalid email format. Please enter a valid email address.');
       } else {
-        setErrorMessage(err.message || 'Authentication failed. Please check your network connection.');
+        setErrorMessage('Authentication failed. Incorrect credentials provided.');
       }
     } finally {
       setIsLoading(false);
@@ -114,7 +118,7 @@ export default function AcademicLoginPortal({
     setErrorMessage('');
     try {
       if (!mobileNumber.trim() || otpCode.length < 4) {
-        setErrorMessage('Please enter a valid mobile number and 4-digit OTP.');
+        setErrorMessage('Please enter a valid mobile number and 4-digit OTP code.');
         setIsLoading(false);
         return;
       }
@@ -142,7 +146,7 @@ export default function AcademicLoginPortal({
       onLoginSuccess(loggedInProfile);
     } catch (err: any) {
       console.warn('Google sign-in error:', err);
-      setErrorMessage(err.message || 'Google authentication failed. Please try email/password.');
+      setErrorMessage(err.message || 'Google sign in failed. Please use email and password.');
     } finally {
       setIsLoading(false);
     }
@@ -159,17 +163,17 @@ export default function AcademicLoginPortal({
             </div>
             <div>
               <h2 className="text-lg font-black text-primary tracking-tight">
-                {authMode === 'signin' ? 'Sign In to Campus' : 'Create Student Account'}
+                {authMode === 'signin' ? 'Campus Portal Sign In' : 'Create Student Account'}
               </h2>
               <p className="text-xs text-secondary font-medium">
                 {authMode === 'signin'
-                  ? 'Access your academic profile and discussions'
-                  : 'Register your details to join campus conversations'}
+                  ? 'Sign in with your registered account credentials'
+                  : 'Register a new account to access campus tools'}
               </p>
             </div>
           </div>
 
-          {/* Mode Selector Tabs */}
+          {/* Mode Tabs */}
           <div className="grid grid-cols-2 gap-1 mt-4 p-1 bg-surface-muted border border-subtle rounded-xl text-xs font-bold">
             <button
               type="button"
@@ -212,7 +216,7 @@ export default function AcademicLoginPortal({
           )}
 
           {loginMethod === 'password' ? (
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
               {authMode === 'register' && (
                 <div>
                   <label className="block text-xs font-bold text-secondary mb-1.5">
@@ -235,7 +239,7 @@ export default function AcademicLoginPortal({
 
               <div>
                 <label className="block text-xs font-bold text-secondary mb-1.5">
-                  Email or Username
+                  Email or Student ID
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -244,7 +248,7 @@ export default function AcademicLoginPortal({
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="student@campus.edu or username"
+                    placeholder="student@campus.edu or ID"
                     disabled={isLoading}
                     className="w-full pl-9 pr-3.5 py-2 text-sm bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary transition disabled:opacity-50"
                   />
@@ -262,7 +266,7 @@ export default function AcademicLoginPortal({
                       onClick={() => setIsForgotOpen(true)}
                       className="text-xs text-muted hover:text-[#FF6848] transition cursor-pointer"
                     >
-                      Forgot password?
+                      Forgot?
                     </button>
                   )}
                 </div>
@@ -286,9 +290,6 @@ export default function AcademicLoginPortal({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-[11px] text-muted mt-1">
-                  At least 6 characters required.
-                </p>
               </div>
 
               <button
@@ -299,7 +300,7 @@ export default function AcademicLoginPortal({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Processing...</span>
+                    <span>Verifying Credentials...</span>
                   </>
                 ) : (
                   <>
@@ -314,7 +315,7 @@ export default function AcademicLoginPortal({
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-secondary mb-1.5">
-                  Mobile Number
+                  Registered Mobile Number
                 </label>
                 <div className="relative">
                   <Smartphone className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -357,7 +358,7 @@ export default function AcademicLoginPortal({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying...</span>
+                    <span>Verifying OTP...</span>
                   </>
                 ) : (
                   <span>Verify OTP & Sign In</span>
