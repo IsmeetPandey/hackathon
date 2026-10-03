@@ -12,9 +12,10 @@ import {
   Loader2,
   Smartphone,
   KeyRound,
-  CheckCircle2,
   ShieldCheck,
   User,
+  ArrowRight,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface AcademicLoginPortalProps {
@@ -31,9 +32,9 @@ export default function AcademicLoginPortal({
 
   const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
   const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
-  const [identifier, setIdentifier] = useState('user1');
+  const [identifier, setIdentifier] = useState('');
   const [fullName, setFullName] = useState('');
-  const [password, setPassword] = useState('user1');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [mobileNumber, setMobileNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -42,23 +43,27 @@ export default function AcademicLoginPortal({
   const [isForgotOpen, setIsForgotOpen] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState(false);
 
-  // Normalize email: map "user1" or student IDs to valid email format
+  // Helper to format user ID into valid email format for Firebase Auth if user enters username
   const getNormalizedEmail = (input: string) => {
     const trimmed = input.trim();
     if (trimmed.includes('@')) return trimmed.toLowerCase();
     return `${trimmed.toLowerCase()}@campus.edu`;
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
     if (!identifier.trim()) {
-      setErrorMessage('Please enter your User ID or email.');
+      setErrorMessage('Please enter your email or username.');
       return;
     }
     if (!password.trim()) {
       setErrorMessage('Please enter your password.');
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long for secure authentication.');
       return;
     }
     if (authMode === 'register' && !fullName.trim()) {
@@ -68,27 +73,15 @@ export default function AcademicLoginPortal({
 
     setIsLoading(true);
     const emailToUse = getNormalizedEmail(identifier);
-    // Ensure password length >= 6 for Firebase Auth requirement
-    const firebasePass = password.length >= 6 ? password : `${password}pass123`;
 
     try {
       if (authMode === 'signin') {
-        try {
-          const loggedInProfile = await loginWithEmail(emailToUse, firebasePass);
-          onLoginSuccess(loggedInProfile);
-          return;
-        } catch (err: any) {
-          // If first attempt fails and raw password was >= 6 chars, try raw password
-          if (password.length >= 6) {
-            const loggedInProfile = await loginWithEmail(emailToUse, password);
-            onLoginSuccess(loggedInProfile);
-            return;
-          }
-          throw err;
-        }
-      } else {        const registeredProfile = await registerWithEmail(
+        const loggedInProfile = await loginWithEmail(emailToUse, password);
+        onLoginSuccess(loggedInProfile);
+      } else {
+        const registeredProfile = await registerWithEmail(
           emailToUse,
-          firebasePass,
+          password,
           fullName,
           'Student',
           'Computer Science & Engineering'
@@ -96,55 +89,19 @@ export default function AcademicLoginPortal({
         onLoginSuccess(registeredProfile);
       }
     } catch (err: any) {
-      console.warn('Firebase auth attempt error:', err);
-      // Auto-provision user account if it doesn't exist yet in Firebase
-      if (
-        err.code === 'auth/user-not-found' ||
-        err.code === 'auth/invalid-credential' ||
-        err.code === 'auth/wrong-password' ||
-        err.message?.includes('user-not-found') ||
-        err.message?.includes('invalid-credential')
-      ) {
-        try {
-          const defaultName = identifier.toLowerCase() === 'user1' ? 'User One' : identifier;
-          const registeredProfile = await registerWithEmail(
-            emailToUse,
-            firebasePass,
-            fullName || defaultName,
-            'Student',
-            'Computer Science & Engineering'
-          );
-          onLoginSuccess(registeredProfile);
-          return;
-        } catch (regErr: any) {
-          if (regErr.code === 'auth/email-already-in-use') {
-            // Account exists, set fallback authenticated profile
-            const userProfile: UserProfile = {
-              ...user,
-              id: `user-${Date.now()}`,
-              username: identifier.toLowerCase() === 'user1' ? 'user1' : identifier,
-              email: emailToUse,
-              role: 'Student',
-              isLoggedIn: true,
-            };
-            onLoginSuccess(userProfile);
-          } else {
-            setErrorMessage(regErr.message || 'Authentication error. Please try again.');
-          }
-        }
+      console.warn('Firebase Auth error:', err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        setErrorMessage('Invalid credentials or user account does not exist. Please switch to "Create Account" tab to sign up.');
+      } else if (err.code === 'auth/wrong-password') {
+        setErrorMessage('Incorrect password. Please verify and try again.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setErrorMessage('An account with this email/username already exists. Please sign in instead.');
       } else if (err.code === 'auth/weak-password') {
-        setErrorMessage('Password must be at least 6 characters.');
+        setErrorMessage('Password is too weak. Please use at least 6 characters.');
+      } else if (err.code === 'auth/invalid-email') {
+        setErrorMessage('Please enter a valid email address.');
       } else {
-        // Safe fallback login for user1
-        const fallbackProfile: UserProfile = {
-          ...user,
-          id: `user-${Date.now()}`,
-          username: identifier.toLowerCase() === 'user1' ? 'user1' : identifier,
-          email: emailToUse,
-          role: 'Student',
-          isLoggedIn: true,
-        };
-        onLoginSuccess(fallbackProfile);
+        setErrorMessage(err.message || 'Authentication failed. Please check your network connection.');
       }
     } finally {
       setIsLoading(false);
@@ -156,18 +113,22 @@ export default function AcademicLoginPortal({
     setIsLoading(true);
     setErrorMessage('');
     try {
-      // Authenticate OTP login session
+      if (!mobileNumber.trim() || otpCode.length < 4) {
+        setErrorMessage('Please enter a valid mobile number and 4-digit OTP.');
+        setIsLoading(false);
+        return;
+      }
       const userProfile: UserProfile = {
         ...user,
-        id: `user1-otp-${Date.now()}`,
-        username: 'user1',
-        email: 'user1@campus.edu',
+        id: `user-mobile-${Date.now()}`,
+        username: `Student (${mobileNumber.slice(-4)})`,
+        email: `${mobileNumber.replace(/\D/g, '')}@mobile.campus.edu`,
         role: 'Student',
         isLoggedIn: true,
       };
       onLoginSuccess(userProfile);
     } catch (err) {
-      setErrorMessage('Invalid OTP code. Please try again.');
+      setErrorMessage('Invalid OTP verification code.');
     } finally {
       setIsLoading(false);
     }
@@ -180,8 +141,8 @@ export default function AcademicLoginPortal({
       const loggedInProfile = await loginWithGoogle();
       onLoginSuccess(loggedInProfile);
     } catch (err: any) {
-      console.warn('Google sign in error:', err);
-      setErrorMessage(err.message || 'Google sign in failed. Please try password login.');
+      console.warn('Google sign-in error:', err);
+      setErrorMessage(err.message || 'Google authentication failed. Please try email/password.');
     } finally {
       setIsLoading(false);
     }
@@ -190,55 +151,68 @@ export default function AcademicLoginPortal({
   return (
     <div className="min-h-[85vh] flex items-center justify-center py-8 px-4">
       <div className="w-full max-w-md bg-surface border border-subtle rounded-2xl shadow-xl overflow-hidden transition-all">
-        {/* Header Banner */}
-        <div className="p-6 bg-gradient-to-r from-[#FF6848]/10 via-[#FF4500]/5 to-transparent border-b border-subtle relative">
+        {/* Banner */}
+        <div className="p-6 bg-gradient-to-r from-[#FF6848]/10 via-[#FF4500]/5 to-transparent border-b border-subtle">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-[#FF6848] text-white flex items-center justify-center font-bold text-xl shadow-md">
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-lg font-black text-primary tracking-tight">
-                Campus Portal Login
+                {authMode === 'signin' ? 'Sign In to Campus' : 'Create Student Account'}
               </h2>
               <p className="text-xs text-secondary font-medium">
                 {authMode === 'signin'
-                  ? 'Sign in to access your student workspace'
-                  : 'Create your new campus account'}
+                  ? 'Access your academic profile and discussions'
+                  : 'Register your details to join campus conversations'}
               </p>
             </div>
+          </div>
+
+          {/* Mode Selector Tabs */}
+          <div className="grid grid-cols-2 gap-1 mt-4 p-1 bg-surface-muted border border-subtle rounded-xl text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('signin');
+                setErrorMessage('');
+              }}
+              className={`py-2 rounded-lg transition cursor-pointer ${
+                authMode === 'signin'
+                  ? 'bg-surface text-primary shadow-2xs font-extrabold'
+                  : 'text-muted hover:text-primary'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('register');
+                setErrorMessage('');
+              }}
+              className={`py-2 rounded-lg transition cursor-pointer ${
+                authMode === 'register'
+                  ? 'bg-surface text-primary shadow-2xs font-extrabold'
+                  : 'text-muted hover:text-primary'
+              }`}
+            >
+              Create Account
+            </button>
           </div>
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Working Credentials Badge */}
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs space-y-1.5">
-            <div className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>Single Account Configured:</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <div className="bg-surface p-1.5 rounded border border-subtle flex justify-between items-center">
-                <span className="text-muted">User ID:</span>
-                <strong className="text-primary font-bold">user1</strong>
-              </div>
-              <div className="bg-surface p-1.5 rounded border border-subtle flex justify-between items-center">
-                <span className="text-muted">Password:</span>
-                <strong className="text-primary font-bold">user1</strong>
-              </div>
-            </div>
-          </div>
-
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {loginMethod === 'password' ? (
-            /* Password Form */
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
               {authMode === 'register' && (
                 <div>
                   <label className="block text-xs font-bold text-secondary mb-1.5">
@@ -251,7 +225,7 @@ export default function AcademicLoginPortal({
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g. User One"
+                      placeholder="e.g. Alex Rivera"
                       disabled={isLoading}
                       className="w-full pl-9 pr-3.5 py-2 text-sm bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary transition disabled:opacity-50"
                     />
@@ -261,7 +235,7 @@ export default function AcademicLoginPortal({
 
               <div>
                 <label className="block text-xs font-bold text-secondary mb-1.5">
-                  User ID / Email
+                  Email or Username
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -270,7 +244,7 @@ export default function AcademicLoginPortal({
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="user1"
+                    placeholder="student@campus.edu or username"
                     disabled={isLoading}
                     className="w-full pl-9 pr-3.5 py-2 text-sm bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary transition disabled:opacity-50"
                   />
@@ -288,7 +262,7 @@ export default function AcademicLoginPortal({
                       onClick={() => setIsForgotOpen(true)}
                       className="text-xs text-muted hover:text-[#FF6848] transition cursor-pointer"
                     >
-                      Forgot?
+                      Forgot password?
                     </button>
                   )}
                 </div>
@@ -297,9 +271,10 @@ export default function AcademicLoginPortal({
                   <input
                     type={showPassword ? 'text' : 'password'}
                     required
+                    minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="user1"
+                    placeholder="••••••••"
                     disabled={isLoading}
                     className="w-full pl-9 pr-10 py-2 text-sm bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary transition disabled:opacity-50"
                   />
@@ -311,6 +286,9 @@ export default function AcademicLoginPortal({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <p className="text-[11px] text-muted mt-1">
+                  At least 6 characters required.
+                </p>
               </div>
 
               <button
@@ -321,31 +299,22 @@ export default function AcademicLoginPortal({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Signing in...</span>
+                    <span>Processing...</span>
                   </>
                 ) : (
-                  <span>{authMode === 'signin' ? 'Sign In as user1' : 'Create Account'}</span>
+                  <>
+                    <span>{authMode === 'signin' ? 'Sign In' : 'Create Account'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
                 )}
               </button>
-
-              <div className="text-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => setAuthMode(authMode === 'signin' ? 'register' : 'signin')}
-                  className="text-xs text-muted hover:text-[#FF6848] transition font-medium cursor-pointer"
-                >
-                  {authMode === 'signin'
-                    ? "New to campus? Create an account"
-                    : 'Already have an account? Sign in'}
-                </button>
-              </div>
             </form>
           ) : (
-            /* OTP Form */
+            /* Mobile OTP */
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-secondary mb-1.5">
-                  Registered Mobile Number
+                  Mobile Number
                 </label>
                 <div className="relative">
                   <Smartphone className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -354,7 +323,7 @@ export default function AcademicLoginPortal({
                     required
                     value={mobileNumber}
                     onChange={(e) => setMobileNumber(e.target.value)}
-                    placeholder="+91 98765 43210"
+                    placeholder="+1 (555) 000-0000"
                     disabled={isLoading}
                     className="w-full pl-9 pr-3.5 py-2 text-sm bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary transition disabled:opacity-50"
                   />
@@ -363,17 +332,17 @@ export default function AcademicLoginPortal({
 
               <div>
                 <label className="block text-xs font-bold text-secondary mb-1.5">
-                  4-Digit OTP Code
+                  OTP Code
                 </label>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    maxLength={4}
+                    maxLength={6}
                     required
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="1234"
+                    placeholder="123456"
                     disabled={isLoading}
                     className="w-full pl-9 pr-3.5 py-2 text-sm font-mono tracking-widest bg-surface-muted border border-subtle rounded-lg focus:border-[#FF6848] focus:bg-surface outline-none text-primary disabled:opacity-50"
                   />
@@ -391,13 +360,12 @@ export default function AcademicLoginPortal({
                     <span>Verifying...</span>
                   </>
                 ) : (
-                  <span>Verify & Sign in</span>
+                  <span>Verify OTP & Sign In</span>
                 )}
               </button>
             </form>
           )}
 
-          {/* Divider */}
           <div className="relative my-3">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-subtle"></div>
@@ -407,7 +375,6 @@ export default function AcademicLoginPortal({
             </div>
           </div>
 
-          {/* Secondary Actions */}
           <div className="space-y-2">
             <button
               type="button"
@@ -441,7 +408,7 @@ export default function AcademicLoginPortal({
               onClick={() => setLoginMethod(loginMethod === 'password' ? 'otp' : 'password')}
               className="w-full py-1.5 text-xs text-muted hover:text-primary font-semibold text-center transition cursor-pointer"
             >
-              {loginMethod === 'password' ? 'Use mobile OTP instead' : 'Use password instead'}
+              {loginMethod === 'password' ? 'Use mobile OTP instead' : 'Use email & password instead'}
             </button>
           </div>
         </div>
@@ -453,15 +420,17 @@ export default function AcademicLoginPortal({
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-5 border border-[#E5E7EB] space-y-3">
             <h3 className="font-bold text-sm text-[#111827]">Reset Password</h3>
             <p className="text-xs text-[#6B7280]">
-              Enter your user ID or email to receive password reset instructions.
+              Enter your email address to receive password reset instructions.
             </p>
-            {forgotSuccess ? (              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-200">
-                Instructions sent to registered campus email.
+            {forgotSuccess ? (
+              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-200 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Reset link sent to registered email.</span>
               </div>
             ) : (
               <input
-                type="text"
-                placeholder="User ID / email"
+                type="email"
+                placeholder="student@campus.edu"
                 className="w-full px-3 py-2 text-xs border border-[#D1D5DB] rounded-lg focus:border-[#FF4500] outline-none text-black"
               />
             )}
@@ -482,7 +451,7 @@ export default function AcademicLoginPortal({
                   onClick={() => setForgotSuccess(true)}
                   className="px-3 py-1.5 text-xs bg-[#FF4500] text-white rounded-lg font-semibold hover:bg-[#E03D00] cursor-pointer"
                 >
-                  Send Link
+                  Send Reset Link
                 </button>
               )}
             </div>
