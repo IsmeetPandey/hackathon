@@ -25,7 +25,8 @@ export default function CampusPulse({
   onOpenPdfModal,
   onOpenRsvpModal,
 }: CampusPulseProps) {
-  const [isMinimized, setIsMinimized] = useState(false);
+  // Default un-expanded as requested to keep the feed clean and prioritized
+  const [isMinimized, setIsMinimized] = useState(true);
   const [pulseItems, setPulseItems] = useState<CampusPulseItem[]>([]);
 
   useEffect(() => {
@@ -132,25 +133,27 @@ export default function CampusPulse({
   return (
     <section
       aria-label="Campus Pulse"
-      className="surface-pulse rounded-2xl p-3.5 sm:p-5 transition-all duration-300 relative overflow-hidden group shadow-2xs border border-subtle"
+      className={`surface-pulse rounded-2xl transition-all duration-200 relative overflow-hidden group shadow-2xs border border-subtle ${
+        isMinimized ? 'p-2.5 sm:p-3' : 'p-3 sm:p-4'
+      }`}
     >
       {/* Top brand accent marker */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#FF6848] via-[#F43F5E] to-[#6366F1]" />
 
       {/* Header Row */}
-      <div className="flex items-center justify-between pb-2.5 border-b border-subtle">
+      <div className={`flex items-center justify-between ${isMinimized ? '' : 'pb-2 border-b border-subtle'}`}>
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#FF6848] ring-4 ring-[#FF6848]/20 shrink-0 animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-[#FF6848] ring-4 ring-[#FF6848]/20 shrink-0 animate-pulse" />
           <div className="min-w-0">
-            <h2 className="font-brand text-base sm:text-xl font-bold text-primary tracking-tight flex items-center gap-2">
+            <h2 className="font-brand text-sm sm:text-base font-bold text-primary tracking-tight flex items-center gap-1.5">
               <span>Campus Pulse</span>
-              <span className="text-[10px] sm:text-xs font-bold text-[#FF6848] bg-brand-surface px-2 py-0.5 rounded-full border border-brand-border">
+              <span className="text-[10px] font-bold text-[#FF6848] bg-brand-surface px-1.5 py-0.5 rounded-full border border-brand-border">
                 Live
               </span>
             </h2>
-            <p className="text-[11px] sm:text-xs text-muted font-medium truncate">
+            <p className="text-[11px] text-muted font-medium truncate">
               {isMinimized
-                ? 'Key updates: Exam Directives · Lab Workshops · Active Spaces'
+                ? 'Exam Directives · Lab Workshops · Active Spaces'
                 : 'Your campus, at a glance'}
             </p>
           </div>
@@ -164,9 +167,9 @@ export default function CampusPulse({
             aria-expanded={!isMinimized}
             aria-label={isMinimized ? 'Expand Campus Pulse' : 'Minimize Campus Pulse'}
             title={isMinimized ? 'Expand briefing' : 'Minimize briefing'}
-            className="flex items-center gap-1 text-xs font-bold text-secondary hover:text-[#FF6848] bg-surface-muted hover:bg-brand-surface border border-subtle hover:border-brand-border px-2.5 py-1 rounded-lg transition-all cursor-pointer min-h-[32px]"
+            className="flex items-center gap-1 text-xs font-bold text-secondary hover:text-[#FF6848] bg-surface-muted hover:bg-brand-surface border border-subtle hover:border-brand-border px-2.5 py-1 rounded-lg transition-all cursor-pointer min-h-[30px]"
           >
-            <span>{isMinimized ? 'Expand' : 'Minimize'}</span>
+            <span>{isMinimized ? 'Expand' : 'Collapse'}</span>
             <ChevronRight
               className={`w-3.5 h-3.5 transition-transform duration-200 ${
                 isMinimized ? 'rotate-90' : '-rotate-90'
@@ -178,8 +181,8 @@ export default function CampusPulse({
 
       {/* Collapsible Content */}
       {!isMinimized && (
-        <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-subtle pt-2">
+        <div className="animate-in fade-in slide-in-from-top-2 duration-200 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-subtle pt-1">
             {pulseItems.map((item, index) => {
               let IconComponent = FileText;
               if (item.type === 'event') IconComponent = Calendar;
@@ -197,33 +200,33 @@ export default function CampusPulse({
                       handlePulseAction(item);
                     }
                   }}
-                  className={`py-2.5 md:py-2 cursor-pointer group flex flex-col justify-between transition-colors hover:bg-surface-muted/60 rounded-xl ${
-                    index === 0 ? 'md:pr-4' : index === 1 ? 'md:px-4' : 'md:pl-4'
+                  className={`py-1.5 md:py-1 cursor-pointer group flex flex-col justify-between transition-colors hover:bg-surface-muted/60 rounded-xl ${
+                    index === 0 ? 'md:pr-3' : index === 1 ? 'md:px-3' : 'md:pl-3'
                   }`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span className="font-bold text-[#FF6848] flex items-center gap-1.5">
-                        <IconComponent className="w-3.5 h-3.5" />
+                  <div className="space-y-0.5">
+                    <div className="flex items-center justify-between text-[11px] text-muted">
+                      <span className="font-bold text-[#FF6848] flex items-center gap-1">
+                        <IconComponent className="w-3 h-3" />
                         <span>{item.tagText}</span>
                       </span>
-                      <span className="text-[11px] text-muted font-medium">
+                      <span className="text-[10px] text-muted font-medium">
                         {item.metadata.split('·')[1]?.trim() || item.metadata}
                       </span>
                     </div>
 
-                    <h3 className="text-xs sm:text-sm font-bold text-primary group-hover:text-[#FF6848] transition-colors leading-snug">
+                    <h3 className="text-xs font-bold text-primary group-hover:text-[#FF6848] transition-colors leading-snug line-clamp-1">
                       {item.title}
                     </h3>
 
-                    <p className="text-xs text-secondary leading-relaxed line-clamp-2 font-medium">
+                    <p className="text-[11px] text-secondary leading-snug line-clamp-1 font-medium">
                       {item.summary}
                     </p>
                   </div>
 
-                  <div className="mt-2 pt-1.5 border-t border-subtle flex items-center justify-between text-xs font-bold text-[#FF6848]">
+                  <div className="mt-1 pt-1 border-t border-subtle flex items-center justify-between text-[11px] font-bold text-[#FF6848]">
                     <span>{item.actionLabel}</span>
-                    <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                    <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </div>
               );
@@ -231,29 +234,26 @@ export default function CampusPulse({
           </div>
 
           {/* Campus AI Trigger */}
-          <div className="mt-3 pt-2.5 border-t border-subtle">
+          <div className="mt-2 pt-2 border-t border-subtle">
             <button
               type="button"
               onClick={handleCatchMeUp}
-              className="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-surface-muted/70 hover:bg-brand-surface border border-subtle hover:border-[#FF6848]/40 text-left transition-all flex items-center justify-between gap-3 group cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#FF6848]"
+              className="w-full min-h-[36px] px-3 py-1.5 rounded-xl bg-surface-muted/70 hover:bg-brand-surface border border-subtle hover:border-[#FF6848]/40 text-left transition-all flex items-center justify-between gap-2.5 group cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#FF6848]"
             >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-[#FF6848] text-white flex items-center justify-center shrink-0 shadow-[0_2px_8px_rgba(255,104,72,0.3)] group-hover:scale-105 transition-transform">
-                  <Sparkles className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-[#FF6848] text-white flex items-center justify-center shrink-0 shadow-[0_2px_6px_rgba(255,104,72,0.3)] group-hover:scale-105 transition-transform">
+                  <Sparkles className="w-3 h-3" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-primary group-hover:text-[#FF6848] transition-colors">
-                    Catch me up with <span className="font-ai text-[#FF6848]">Campus AI</span>
+                  <span className="text-xs font-bold text-primary group-hover:text-[#FF6848] transition-colors">
+                    Brief me with <span className="font-ai text-[#FF6848]">Campus AI</span>
                   </span>
-                  <p className="text-[11px] text-muted truncate hidden sm:block font-medium">
-                    Instant briefing on urgent notices, lab schedules, and community discussions
-                  </p>
                 </div>
               </div>
 
-              <div className="shrink-0 flex items-center gap-1 text-xs font-bold text-[#FF6848] group-hover:text-[#E95739]">
+              <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-[#FF6848] group-hover:text-[#E95739]">
                 <span>Brief Me</span>
-                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
               </div>
             </button>
           </div>

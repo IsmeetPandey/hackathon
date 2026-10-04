@@ -17,8 +17,15 @@ import { ViewMode, UserProfile, PostItem } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { LogOut } from 'lucide-react';
 
+const emptySubscribe = () => () => {};
+
 export default function Home() {
   const { userProfile, isLoading, logout } = useAuth();
+  const mounted = React.useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const [internalView, setInternalView] = useState<ViewMode>('all-campus');
   const [selectedCommunitySlug, setSelectedCommunitySlug] = useState<string | null>(null);
   const [localUser, setLocalUser] = useState<UserProfile | null>(null);
@@ -359,6 +366,22 @@ export default function Home() {
         );
     }
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#0B0F19] text-white flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6848] flex items-center justify-center text-white font-extrabold text-2xl shadow-[0_4px_20px_rgba(255,104,72,0.4)] animate-pulse">
+            <span className="font-brand">C</span>
+          </div>
+          <div className="font-brand font-black text-xl text-white tracking-tight">
+            Campus<span className="text-[#FF6848]">Connect</span>
+          </div>
+          <p className="text-xs text-slate-400">Loading academic portal...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppShell

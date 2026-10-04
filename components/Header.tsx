@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { ViewMode, UserProfile } from '@/types';
+import { useTheme } from '@/context/ThemeContext';
 import {
   Search,
   Bell,
@@ -43,28 +44,11 @@ export default function Header({
   onOpenProfile,
   onLogout,
 }: HeaderProps) {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
-    }
-    return 'light';
-  });
+  const { theme, toggleTheme } = useTheme();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileSearchActive, setIsMobileSearchActive] = useState(false);
   const [unreadCount] = useState(2);
   const [unreadMessagesCount] = useState(3);
-
-  const toggleTheme = () => {
-    if (theme === 'dark') {
-      document.documentElement.classList.remove('dark');
-      setTheme('light');
-      localStorage.setItem('theme', 'light');
-    } else {
-      document.documentElement.classList.add('dark');
-      setTheme('dark');
-      localStorage.setItem('theme', 'dark');
-    }
-  };
 
   return (
     <header className="fixed top-0 left-0 right-0 h-14 sm:h-16 bg-surface backdrop-blur-md border-b border-subtle flex items-center justify-between px-3 sm:px-4 md:px-6 z-40 transition-colors duration-200">

@@ -49,23 +49,26 @@ const LOCAL_STORAGE_KEY = 'campusconnect_session_backup';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    if (typeof window !== 'undefined') {
+  const [userProfile, setUserProfile] = useState<UserProfile>(GUEST_USER);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Restore local session on client mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
       try {
         const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.isLoggedIn) {
-            return parsed;
+            setUserProfile(parsed);
           }
         }
       } catch {
         // Ignore JSON error
       }
-    }
-    return GUEST_USER;
-  });
-  const [isLoading, setIsLoading] = useState(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Helper to persist user profile to local storage safely
   const persistLocally = (profile: UserProfile) => {
